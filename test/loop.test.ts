@@ -81,6 +81,26 @@ test("calls cut off by the output limit are not executed", async () => {
   expect(() => JSON.parse(asst.tool_calls[0].function.arguments)).not.toThrow();
 });
 
+test("repaired arguments are counted; unrepairable ones get the parse error", async () => {
+  const { run, messages, stats } = setup();
+  script = [{ calls: [["read", '{"path":"a.txt"'], ["read", "{{{"]] }, { text: "done" }];
+  await run();
+  const results = messages.filter((m) => m.role === "tool") as { content: string }[];
+  expect(results[0].content).toContain("1: hello");
+  expect(results[1].content).toContain("not valid JSON");
+  expect(stats.repairedArgs).toBe(1);
+});
+
+test("a second cutoff in a row stops the run with every call answered", async () => {
+  const { run, messages } = setup();
+  const cut = { calls: [["write", '{"path":"b.txt","content":"x']] as [string, string][], finish: "length" };
+  script = [cut, cut];
+  expect((await run()).status).toBe("stopped");
+  const ids = messages.flatMap((m) => (m.role === "assistant" ? (m.tool_calls ?? []).map((c) => c.id) : []));
+  const answered = messages.flatMap((m) => (m.role === "tool" ? [m.tool_call_id] : []));
+  expect(answered).toEqual(ids);
+});
+
 test("repeated identical calls stop the run", async () => {
   const { run } = setup();
   script = Array.from({ length: 6 }, () => ({ calls: [["read", '{"path":"a.txt"}']] as [string, string][] }));

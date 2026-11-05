@@ -65,20 +65,21 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
     o.onEvent({ type: "turn", step, usage: reply.usage, ms: Date.now() - t0 });
 
     const calls = reply.message.tool_calls ?? [];
+    const parsed = calls.map((c) => parseArgs(c.function.arguments));
     // The server re-renders earlier turns from these fields; arguments that aren't valid
     // JSON can make the chat template fail, so store a parseable form.
-    for (const c of calls) {
-      const parsed = parseArgs(c.function.arguments);
-      if (typeof parsed === "string") c.function.arguments = "{}";
-      else if (parsed.repaired || !c.function.arguments.trim()) c.function.arguments = JSON.stringify(parsed.args);
-    }
+    calls.forEach((c, i) => {
+      const p = parsed[i];
+      if (typeof p === "string") c.function.arguments = "{}";
+      else if (p.repaired || !c.function.arguments.trim()) c.function.arguments = JSON.stringify(p.args);
+    });
     push(reply.message);
 
     if (reply.finish === "length") {
       o.stats.cutoffs++;
+      for (const c of calls) push({ role: "tool", tool_call_id: c.id, content: CUTOFF_RESULT });
       if (++cutoffs >= CUTOFF_STOP) return { status: "stopped", reason: "the model's reply hit the output token limit twice in a row" };
-      if (calls.length) for (const c of calls) push({ role: "tool", tool_call_id: c.id, content: CUTOFF_RESULT });
-      else push({ role: "user", content: "Your reply was cut off by the output token limit. Continue from where you stopped, in smaller pieces." });
+      if (!calls.length) push({ role: "user", content: "Your reply was cut off by the output token limit. Continue from where you stopped, in smaller pieces." });
       continue;
     }
     cutoffs = 0;
@@ -90,12 +91,12 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
 
     let failed = 0;
     let stopReason = "";
-    for (const call of calls) {
+    for (const [i, call] of calls.entries()) {
       if (o.signal?.aborted) {
         push({ role: "tool", tool_call_id: call.id, content: "Interrupted by the user before this call ran." });
         continue;
       }
-      const { name, args, result } = await runCall(call, o, guard);
+      const { name, args, result } = await runCall(call, parsed[i], o, guard);
       if (!result.ok) {
         failed++;
         o.stats.toolErrors++;
@@ -122,12 +123,16 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
   return { status: "step_limit" };
 }
 
-async function runCall(call: ToolCall, o: RunOptions, guard: LoopGuard): Promise<{ name: string; args: Record<string, unknown>; result: ToolResult }> {
+async function runCall(
+  call: ToolCall,
+  parsed: ReturnType<typeof parseArgs>,
+  o: RunOptions,
+  guard: LoopGuard,
+): Promise<{ name: string; args: Record<string, unknown>; result: ToolResult }> {
   const name = toolName(call.function.name);
   o.stats.toolCalls[name] = (o.stats.toolCalls[name] ?? 0) + 1;
   const tool = o.tools.find((t) => t.name === name);
   if (!tool) return { name, args: {}, result: fail(`Unknown tool "${call.function.name}". Available tools: ${o.tools.map((t) => t.name).join(", ")}.`) };
-  const parsed = parseArgs(call.function.arguments);
   if (typeof parsed === "string") return { name, args: {}, result: fail(parsed) };
   if (parsed.repaired) o.stats.repairedArgs++;
   const args = normalizeArgs(tool, parsed.args);
