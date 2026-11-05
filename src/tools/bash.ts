@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DENIED, fail, ok, type Tool, type ToolContext } from "./types.ts";
 
 const HEAD = 4000;
@@ -10,17 +10,15 @@ const MAX_KEEP = 50_000_000;
 
 const q = (s: string) => JSON.stringify(s);
 
-// macOS Seatbelt: writes only to the workspace, temp dirs, package caches and heyho's
-// state dir; optionally no network. Later rules override earlier ones in SBPL.
-export function seatbeltProfile(ctx: ToolContext): string {
+// macOS Seatbelt: writes only to the workspace, temp dirs and package caches; optionally no
+// network. Later rules override earlier ones in SBPL. The eval runner reuses this for Pi.
+export function seatbeltProfile(root: string, noNet: boolean): string {
   const home = homedir();
   const writable = [
-    ctx.root,
-    realpathSync(tmpdir()),
+    root,
+    dirname(realpathSync(tmpdir())), // this user's /var/folders entry: $TMPDIR (T) and the cache dir (C)
     "/private/tmp",
-    "/private/var/folders",
     "/dev",
-    realpathSync(ctx.stateDir),
     ...[".npm", ".bun", ".cache", "Library/Caches"].map((d) => join(home, d)),
   ];
   return [
@@ -28,7 +26,7 @@ export function seatbeltProfile(ctx: ToolContext): string {
     "(allow default)",
     "(deny file-write*)",
     `(allow file-write* ${writable.map((p) => `(subpath ${q(p)})`).join(" ")})`,
-    ctx.sandbox.noNet ? "(deny network*)" : "",
+    noNet ? "(deny network*)" : "",
   ].join("\n");
 }
 
@@ -59,7 +57,7 @@ export const bash: Tool = {
     const timeout = Math.min(600, Math.max(1, Number(args.timeout) || 120));
     if (!(await ctx.approve("bash", command))) return DENIED;
     const [cmd, argv] = ctx.sandbox.enabled
-      ? ["/usr/bin/sandbox-exec", ["-p", seatbeltProfile(ctx), "/bin/bash", "-c", command]]
+      ? ["/usr/bin/sandbox-exec", ["-p", seatbeltProfile(ctx.root, ctx.sandbox.noNet), "/bin/bash", "-c", command]]
       : ["/bin/bash", ["-c", command]];
 
     return new Promise((resolveResult) => {

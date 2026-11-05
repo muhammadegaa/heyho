@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { bash } from "../src/tools/bash.ts";
 import { edit, locate } from "../src/tools/edit.ts";
 import { read } from "../src/tools/read.ts";
@@ -162,9 +163,17 @@ describe("bash", () => {
     }
   });
   test("sandbox --no-net blocks network", async () => {
-    ctx.sandbox = { enabled: true, noNet: true };
-    const res = await bash.run({ command: "curl -sS -m 3 http://127.0.0.1:9 || true" }, ctx);
-    expect(res.text.toLowerCase()).toMatch(/not permitted|couldn't connect|failed/);
+    const server = createServer((_, res) => res.end("pong"));
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const command = `curl -sS -m 3 http://127.0.0.1:${(server.address() as { port: number }).port}/ || true`;
+    try {
+      ctx.sandbox = { enabled: true, noNet: false };
+      expect((await bash.run({ command }, ctx)).text).toContain("pong");
+      ctx.sandbox = { enabled: true, noNet: true };
+      expect((await bash.run({ command }, ctx)).text).not.toContain("pong");
+    } finally {
+      server.close();
+    }
   });
 });
 

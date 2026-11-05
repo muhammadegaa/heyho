@@ -8,6 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { PROFILES } from "../src/profiles.ts";
+import { seatbeltProfile } from "../src/tools/bash.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const WALL_LIMIT_MS = 20 * 60_000;
@@ -149,10 +150,9 @@ async function runOne(task: Task, n: number, outDir: string) {
     const agentDir = mkdtempSync(join(tmpdir(), "heyho-pi-"));
     writeFileSync(join(agentDir, "models.json"), piModelsJson());
     // Pi has no sandbox of its own; run it under the same Seatbelt profile heyho uses.
-    const profile = `(version 1)(allow default)(deny file-write*)(allow file-write* (subpath "/private/var/folders") (subpath "/private/tmp") (subpath "/dev") (subpath ${JSON.stringify(join(homedir(), ".npm"))}) (subpath ${JSON.stringify(join(homedir(), ".cache"))}))`;
     const r = await runWithLimit(
       "/usr/bin/sandbox-exec",
-      ["-p", profile, PI_BIN, "--mode", "json", "--no-session", "--provider", "heyho", "--model", PROFILES[opt.profile!].model, prompt],
+      ["-p", seatbeltProfile(ws, false), PI_BIN, "--mode", "json", "--no-session", "--provider", "heyho", "--model", PROFILES[opt.profile!].model, prompt],
       ws,
       { ...process.env, PI_CODING_AGENT_DIR: agentDir },
       WALL_LIMIT_MS,
