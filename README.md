@@ -14,7 +14,7 @@ bun src/cli.ts --cwd path/to/repo "fix the failing test"           # one task, t
 bun src/cli.ts --cwd path/to/repo --yolo "fix the failing test"    # no prompts, bash sandboxed
 ```
 
-`--profile` picks the model settings (`qwen3-coder`, `qwen3.6`, or hosted `or-sonnet` / `or-qwen3.6` via OpenRouter). `--base-url` points at any other OpenAI-compatible server.
+`--profile` picks the model settings (`qwen3-coder`, `qwen3.6`, or hosted `or-sonnet` / `or-qwen3.6` via OpenRouter). `--base-url` points at any other OpenAI-compatible server. heyho reads the context size from llama-server and Ollama; for other servers, set `HEYHO_CTX` to the context size the server runs with.
 
 The eval: `bun eval/run.ts --profile qwen3-coder --tasks smoke` (or `all`, or task ids; `--harness pi` runs the same tasks through Pi).
 
@@ -25,7 +25,7 @@ Built and measured on a MacBook Pro M1 Max with 64 GB, targeting Qwen3.6-35B-A3B
 - At most 1.5k tokens of fixed prompt and tool schemas, so most of a 64k window is left for the code.
 - Append-only conversation, so llama.cpp reuses its prompt cache: on this machine an unchanged 23k-token prefix costs 0.6 s per turn instead of 155 s.
 - Five tools: `read`, `edit`, `write`, `bash`, `search`.
-- Recovers tool calls that local models write as plain text, repairs malformed JSON arguments, and stops repeated identical calls.
+- Repairs malformed JSON arguments and stops repeated identical calls. Recovering tool calls that local models write as plain text is planned for milestone 2; for now they are only counted.
 - `bash` runs inside a macOS Seatbelt sandbox in unattended modes.
 - An eval suite runs the same tasks through heyho, through another harness on the same model, and through a hosted frontier model, so a failure can be traced to the model or to the harness.
 

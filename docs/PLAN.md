@@ -13,7 +13,7 @@ It is meant to be used daily on real work and published: public MIT repo from da
 ### Language: TypeScript, Node-compatible, developed on Bun
 - The two harnesses closest to the goal are TypeScript: Pi (4 tools, ~1k-token budget, top group on Terminal-Bench 2.0) and OpenCode. Their source is our reference.
 - MCP's reference SDK is TypeScript.
-- Source uses only Node APIs (`node:child_process`, `node:fs`, `fetch`), no `Bun.*`, so the published package runs with `npx heyho` on Node ≥ 20. Bun is used for development, tests (`bun test`) and single-file binaries (`bun build --compile`).
+- Source uses only Node APIs (`node:child_process`, `node:fs`, `fetch`), no `Bun.*`, so the published package runs with `npx heyho` on Node ≥ 22.18. Bun is used for development, tests (`bun test`) and single-file binaries (`bun build --compile`).
 - Runner-up: Python (Aider, mini-swe-agent and Mini Harness are Python; tree-sitter bindings are mature). Go and Rust would be slower to iterate on at 10–15 hours a week.
 
 ### Dependencies
@@ -22,8 +22,8 @@ Model client written on `fetch` + an SSE parser (~120 lines), not an SDK, so we 
 ### Serving
 - Primary: llama-server. It loads any GGUF file by path, including the blobs Ollama already stored, so no model is kept twice on disk. Launched by a script in the repo:
   `llama-server -m <gguf> -c 65536 -fa on --jinja -cram 2048 -np 1 --port 8080`
-- Supported: Ollama (requires `OLLAMA_CONTEXT_LENGTH=65536`; heyho detects and refuses a missing or too-large context), LM Studio, mlx_lm.server, vLLM. heyho always sends `max_tokens`.
-- At startup heyho reads the real context size (llama-server `/props`, Ollama `/api/ps`, LM Studio `/api/v0/models`) and uses that number, never a default.
+- Supported: Ollama (requires `OLLAMA_CONTEXT_LENGTH=65536`; heyho reads the context Ollama loaded and warns above 131k), LM Studio, mlx_lm.server, vLLM. heyho always sends `max_tokens`.
+- At startup heyho reads the real context size (llama-server `/props`, Ollama `/api/ps`) and uses that number, never a default. For other servers it refuses to start until `HEYHO_CTX` is set.
 
 ### Models
 - Development baseline (installed now): `qwen3-coder:30b`, served by llama-server from Ollama's blob file.
@@ -101,10 +101,10 @@ Every error message says what to do next. All file tools resolve real paths and 
 - Malformed arguments: jsonrepair, then key aliases (`file_path`→`path`, `cmd`→`command`), then an error naming the bad key with an excerpt. Never execute a malformed call.
 - Tool calls found in message text (`<tool_call>`, `<function=…>`, `{"name":…,"arguments":…}`) are parsed and run, and counted as a metric.
 - Output cut off at the token limit: partial calls are not executed; nudge to take a smaller step; stop after 2 in a row.
-- Identical call (name + sorted args): warning at 3, stop at 5.
+- Identical call (name + sorted args), counted only when back to back: warning at 3, stop at 5. Re-running the same test between edits is normal, so calls with others in between don't count.
 - Mistake counter: a turn where every call failed; stop (or ask, when interactive) at 6.
 - Step cap: 40 headless, with a text-only wrap-up turn.
-- Server: retry dropped connections and empty streams 3× with backoff; 10-minute first-token timeout for cold loads and long prefills; detect llama.cpp and Ollama context-overflow errors, compact and retry once.
+- Server: retry dropped connections, streams that break or stall for 2 minutes, and empty streams 3× with backoff; 10-minute first-token timeout for cold loads and long prefills, not retried; detect llama.cpp and Ollama context-overflow errors, compact and retry once.
 - Ctrl-C: pending calls get "interrupted" results so the transcript stays valid.
 
 ### Permissions and sandbox
@@ -112,7 +112,7 @@ Every error message says what to do next. All file tools resolve real paths and 
   - `ask` (interactive default): edit, write and bash prompt for approval; reads and searches don't; "always allow" applies per command prefix for the session.
   - `auto`: edits run unprompted; bash runs inside the sandbox; commands on the confirm list still prompt.
   - `yolo`: headless and eval only, everything inside the sandbox.
-- **Seatbelt profile** for bash in `auto` and `yolo`: writes allowed only to the workspace, `$TMPDIR` and package caches (`~/.npm`, `~/.bun`, pip). Network on by default, `--no-net` to turn it off.
+- **Seatbelt profile** for bash in `auto` and `yolo`: writes allowed only to the workspace, this user's temp and cache folders (`/var/folders/…`, `/private/tmp`) and package caches (`~/.npm`, `~/.bun`, `~/.cache`, `~/Library/Caches`). Network on by default, `--no-net` to turn it off.
 - **Confirm list** (prompts even in `auto`): `sudo`, `git push`, `git reset --hard`, `curl … | sh`. This is a convenience; the sandbox is the actual boundary.
 - **Checkpoints (M2):** `git stash create` + a private ref before each turn that edits; `/undo` restores and refuses if HEAD moved. In a non-git directory heyho warns and offers `git init`.
 
@@ -132,7 +132,7 @@ Every error message says what to do next. All file tools resolve real paths and 
 
 **Runner:** `bun eval/run.ts --profile <model> --tasks smoke|all --runs N`
 1. Copy the task to a temp directory, `git init`.
-2. Run `heyho --headless --yolo` with a step cap and a 20-minute wall limit.
+2. Run `heyho --yolo "<task>"` with a step cap and a 20-minute wall limit.
 3. Copy in the hidden tests and run `verify.sh`.
 4. Record per run: pass, steps, tool calls by type, tool errors, recovered text calls, failed edits, compactions, prompt / cached / generated tokens, wall time.
 5. Print a table compared with the previous run.
