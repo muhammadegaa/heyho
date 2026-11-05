@@ -53,13 +53,14 @@ describe("read", () => {
 });
 
 describe("edit", () => {
-  test("requires a read first, and a fresh one", async () => {
+  test("edits an unread file; refuses one that changed since it was read", async () => {
     w("f.py", "x = 1\n");
-    expect((await edit.run({ path: "f.py", old_string: "x = 1", new_string: "x = 2" }, ctx)).text).toContain("Read f.py before");
+    expect((await edit.run({ path: "f.py", old_string: "x = 1", new_string: "x = 2" }, ctx)).ok).toBe(true);
+    expect(r("f.py")).toBe("x = 2\n");
     await read.run({ path: "f.py" }, ctx);
-    w("f.py", "x = 1\ny = 2\n");
+    w("f.py", "x = 2\ny = 2\n");
     utimesSync(join(ctx.root, "f.py"), new Date(), new Date(Date.now() + 5000));
-    expect((await edit.run({ path: "f.py", old_string: "x = 1", new_string: "x = 2" }, ctx)).text).toContain("changed on disk");
+    expect((await edit.run({ path: "f.py", old_string: "x = 2", new_string: "x = 3" }, ctx)).text).toContain("changed on disk");
   });
   test("exact replace and diff", async () => {
     w("f.py", "def f():\n    return 1\n");

@@ -84,7 +84,7 @@ export function checkFresh(ctx: ToolContext, abs: string, shown: string): string
 export const edit: Tool = {
   name: "edit",
   description:
-    "Replace exact text in a file. old_string must match the file exactly, including indentation, without the `N: ` line prefixes from read, and must be unique unless replace_all is true. Read the file first.",
+    "Replace exact text in a file. old_string must match the file exactly, including indentation, without the `N: ` line prefixes from read, and must be unique unless replace_all is true.",
   parameters: {
     type: "object",
     properties: {
@@ -99,7 +99,9 @@ export const edit: Tool = {
     const abs = resolvePath(ctx, String(args.path));
     const shown = rel(ctx, abs);
     if (!existsSync(abs)) return fail(`${shown} does not exist. Use write to create it.`);
-    const stale = checkFresh(ctx, abs, shown);
+    // An unread file can be edited: old_string must match it exactly anyway. A file read
+    // earlier must be unchanged since, or the model is working from a stale copy.
+    const stale = ctx.seen.has(abs) ? checkFresh(ctx, abs, shown) : null;
     if (stale) return fail(stale);
     const old = String(args.old_string).replace(/\r\n/g, "\n");
     const neu = String(args.new_string).replace(/\r\n/g, "\n");
