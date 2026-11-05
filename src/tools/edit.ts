@@ -111,7 +111,7 @@ export const edit: Tool = {
     const text = crlf ? raw.replace(/\r\n/g, "\n") : raw;
     const { ranges, tier } = locate(text, old);
     if (!ranges.length) {
-      const hint = text.includes(neu) ? "new_string is already in the file, so this edit may already be applied." : closestLines(text, old);
+      const hint = neu && text.includes(neu) ? "new_string is already in the file, so this edit may already be applied." : closestLines(text, old);
       return fail(`Could not find old_string in ${shown}. It must match exactly, including whitespace and indentation.\n${hint}`);
     }
     if (ranges.length > 1 && args.replace_all !== true) {

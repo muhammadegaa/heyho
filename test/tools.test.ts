@@ -97,6 +97,8 @@ describe("edit", () => {
     expect(miss.text).toContain("3: def load(path):");
     const applied = await edit.run({ path: "f.py", old_string: "nope", new_string: "import os" }, ctx);
     expect(applied.text).toContain("may already be applied");
+    const deletion = await edit.run({ path: "f.py", old_string: "def load(path):\n    with open(path, 'r') as f:", new_string: "" }, ctx);
+    expect(deletion.text).toContain("3: def load(path):");
   });
   test("keeps CRLF line endings", async () => {
     w("f.txt", "a\r\nb\r\n");
