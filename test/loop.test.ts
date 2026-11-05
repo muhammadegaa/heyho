@@ -125,6 +125,17 @@ test("a context overflow from the server ends the run as context_full", async ()
   expect((await run()).status).toBe("context_full");
 });
 
+test("a tool call written as text is run, and the reply stored as a real tool call", async () => {
+  const { run, messages, stats } = setup();
+  script = [{ text: "Reading it.\n<function=read>\n<parameter=path>\na.txt\n</parameter>\n</function>\n</tool_call>" }, { text: "done" }];
+  expect((await run()).status).toBe("done");
+  expect(stats.textToolCalls).toBe(1);
+  const asst = messages[2] as { content: string; tool_calls: { function: { name: string; arguments: string } }[] };
+  expect(asst.content).toBe("Reading it.");
+  expect(asst.tool_calls[0].function).toEqual({ name: "read", arguments: '{"path":"a.txt"}' });
+  expect((messages[3] as { content: string }).content).toContain("1: hello");
+});
+
 test("repeated identical calls stop the run", async () => {
   const { run } = setup();
   script = Array.from({ length: 6 }, () => ({ calls: [["read", '{"path":"a.txt"}']] as [string, string][] }));

@@ -74,10 +74,48 @@ export function normalizeArgs(tool: Tool, input: Record<string, unknown>): Recor
   return args;
 }
 
-// Tool calls written into the message text instead of the tool_calls field. Only counted;
-// a turn like this ends the run.
-export const looksLikeTextToolCall = (content: string | null) =>
-  !!content && /<tool_call>|<function=\w+|"name"\s*:\s*"(read|edit|write|bash|search)"/.test(content);
+type TextCall = { name: string; args: Record<string, unknown> };
+
+// Tool calls the model wrote into its reply text instead of the tool_calls field: Qwen's
+// XML form (llama-server misses it when the opening <tool_call> tag is absent), JSON inside
+// <tool_call> tags, or a reply that is nothing but a {"name", "arguments"} object.
+export function textToolCalls(content: string | null): { calls: TextCall[]; rest: string } | null {
+  if (!content) return null;
+  const calls: TextCall[] = [];
+  let rest = content.replace(/<function=([\w.-]+)>([\s\S]*?)(?:<\/function>|$)/g, (_, name: string, body: string) => {
+    const args: Record<string, unknown> = {};
+    for (const [, key, value] of body.matchAll(/<parameter=([\w.-]+)>\n?([\s\S]*?)\n?<\/parameter>/g)) args[key] = value;
+    calls.push({ name, args });
+    return "";
+  });
+  rest = rest.replace(/<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/g, (match, json: string) => {
+    const p = parseArgs(json);
+    const call = typeof p === "string" ? null : toCall(p.args);
+    if (!call) return match;
+    calls.push(call);
+    return "";
+  });
+  if (calls.length) return { calls, rest: rest.replace(/<\/?tool_call>/g, "").trim() };
+  try {
+    const call = toCall(JSON.parse(content.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1")));
+    return call ? { calls: [call], rest: "" } : null;
+  } catch {
+    return null;
+  }
+}
+
+function toCall(v: unknown): TextCall | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  let a = o.arguments ?? o.parameters;
+  if (typeof o.name !== "string" || a === undefined) return null;
+  if (typeof a === "string") {
+    const p = parseArgs(a);
+    if (typeof p === "string") return null;
+    a = p.args;
+  }
+  return a && typeof a === "object" && !Array.isArray(a) ? { name: o.name, args: a as Record<string, unknown> } : null;
+}
 
 // Counts consecutive identical calls (name + arguments). Re-running the same test command
 // between edits is normal, so only an unbroken run of the same call counts.

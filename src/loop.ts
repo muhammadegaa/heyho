@@ -1,5 +1,5 @@
 import { chat, ContextOverflowError, type Message, type Profile, type Reply, type ToolCall, type Usage } from "./model.ts";
-import { looksLikeTextToolCall, LoopGuard, normalizeArgs, parseArgs, toolName } from "./recover.ts";
+import { LoopGuard, normalizeArgs, parseArgs, textToolCalls, toolName } from "./recover.ts";
 import { toolSchemas } from "./tools/index.ts";
 import { fail, type Tool, type ToolContext, type ToolResult } from "./tools/types.ts";
 
@@ -69,7 +69,15 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
     o.record({ usage: reply.usage });
     o.onEvent({ type: "turn", step, usage: reply.usage, ms: Date.now() - t0 });
 
-    const calls = reply.message.tool_calls ?? [];
+    let calls = reply.message.tool_calls ?? [];
+    const found = !calls.length && reply.finish !== "length" ? textToolCalls(reply.message.content) : null;
+    if (found) {
+      // Stored as a real tool call so later turns show the model the format it should use.
+      o.stats.textToolCalls++;
+      calls = found.calls.map((c, i) => ({ id: `text_${step}_${i}`, type: "function", function: { name: c.name, arguments: JSON.stringify(c.args) } }));
+      reply.message.content = found.rest || null;
+      reply.message.tool_calls = calls;
+    }
     const parsed = calls.map((c) => parseArgs(c.function.arguments));
     // The server re-renders earlier turns from these fields; arguments that aren't valid
     // JSON can make the chat template fail, so store a parseable form.
@@ -89,10 +97,7 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
     }
     cutoffs = 0;
 
-    if (!calls.length) {
-      if (looksLikeTextToolCall(reply.message.content)) o.stats.textToolCalls++;
-      return { status: "done" };
-    }
+    if (!calls.length) return { status: "done" };
 
     let failed = 0;
     let stopReason = "";
