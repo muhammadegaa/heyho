@@ -21,7 +21,7 @@ Options
   --profile <name>      model profile (default qwen3-coder; env HEYHO_PROFILE)
   --base-url <url>      override the profile's OpenAI-compatible endpoint
   --model <name>        override the profile's model name
-  --yolo                no approval prompts; bash runs in the macOS sandbox
+  --yolo                with a task: no approval prompts; bash runs in the macOS sandbox
   --no-net              with --yolo, the sandbox also blocks network access
   --max-steps <n>       step limit (default 40)
   --report <file>       write a JSON run report (used by the eval runner)
@@ -64,6 +64,7 @@ async function main() {
 
   const task = positionals.join(" ").trim();
   const headless = task.length > 0;
+  if (opt.yolo && !headless) throw new Error("--yolo needs a task argument; it is for unattended runs.");
   let rl: Interface | undefined;
   const ask = (q: string) => (rl ??= createInterface({ input: process.stdin, output: process.stderr })).question(q);
 
@@ -76,11 +77,12 @@ async function main() {
     outCount: { n: 0 },
     approve: async (kind, summary) => {
       if (opt.yolo) return true;
-      const key = kind === "bash" ? `bash:${summary.trim().split(/\s+/)[0]}` : kind;
+      // Bash is not sandboxed in ask mode, so "always" covers only the exact command.
+      const key = kind === "bash" ? `bash:${summary.trim()}` : kind;
       if (always.has(key)) return true;
       if (!process.stdin.isTTY) return false;
       process.stderr.write(`\n${dim(summary)}\n`);
-      const label = kind === "bash" ? `commands starting with "${key.slice(5)}"` : `all ${kind}s`;
+      const label = kind === "bash" ? "this exact command" : `all ${kind}s`;
       const a = (await ask(`Allow ${kind}? [y]es / [n]o / [a]lways for ${label} this session: `)).trim().toLowerCase();
       if (a === "a") always.add(key);
       return a === "y" || a === "a";
