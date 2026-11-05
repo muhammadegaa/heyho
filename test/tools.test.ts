@@ -31,9 +31,19 @@ describe("read", () => {
     expect(next.text).toContain("[end of file, 300 lines]");
   });
   test("refuses paths outside the workspace, including through symlinks", async () => {
-    expect(read.run({ path: "../../etc/passwd" }, ctx)).rejects.toThrow("outside the working directory");
+    await expect(read.run({ path: "../../etc/passwd" }, ctx)).rejects.toThrow("outside the working directory");
     symlinkSync("/etc", join(ctx.root, "link"));
-    expect(read.run({ path: "link/hosts" }, ctx)).rejects.toThrow("outside the working directory");
+    await expect(read.run({ path: "link/hosts" }, ctx)).rejects.toThrow("outside the working directory");
+  });
+  test("refuses to write through a symlink to a missing file", async () => {
+    const target = join(mkdtempSync(join(tmpdir(), "heyho-outside-")), "target.txt");
+    symlinkSync(target, join(ctx.root, "dangling.txt"));
+    await expect(write.run({ path: "dangling.txt", content: "x" }, ctx)).rejects.toThrow("symlink to a missing file");
+    expect(existsSync(target)).toBe(false);
+  });
+  test("accepts names that start with two dots", async () => {
+    w("..env", "A=1\n");
+    expect((await read.run({ path: "..env" }, ctx)).text).toContain("1: A=1");
   });
   test("may read heyho's state dir", async () => {
     writeFileSync(join(ctx.stateDir, "1.log"), "saved output");

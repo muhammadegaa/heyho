@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export type ToolContext = {
@@ -27,16 +27,27 @@ export const DENIED = fail("The user declined this action. Ask what they want in
 
 function inside(parent: string, child: string) {
   const r = relative(parent, child);
-  return r === "" || (!r.startsWith("..") && !isAbsolute(r) && !r.startsWith(sep));
+  return r === "" || (r !== ".." && !r.startsWith(".." + sep) && !isAbsolute(r));
 }
+
+const lexists = (p: string) => {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 // Resolves a path the model gave and refuses anything outside the workspace (after
 // following symlinks). For a path that doesn't exist yet, the nearest existing parent
-// is resolved instead.
+// is resolved instead. A symlink whose target is missing is refused: writing through it
+// would create the target, wherever it points.
 export function resolvePath(ctx: ToolContext, p: string, opts: { allowState?: boolean } = {}): string {
   const abs = resolve(ctx.root, p);
   let existing = abs;
-  while (!existsSync(existing)) existing = dirname(existing);
+  while (!lexists(existing)) existing = dirname(existing);
+  if (!existsSync(existing)) throw new Error(`${p} is a symlink to a missing file. Use a path inside the working directory.`);
   const real = resolve(realpathSync(existing), relative(existing, abs));
   if (inside(ctx.root, real)) return real;
   if (opts.allowState && inside(realpathSync(ctx.stateDir), real)) return real;
