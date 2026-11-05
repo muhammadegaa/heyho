@@ -21,7 +21,7 @@ Model client written on `fetch` + an SSE parser (~120 lines), not an SDK, so we 
 
 ### Serving
 - Primary: llama-server. It loads any GGUF file by path, including the blobs Ollama already stored, so no model is kept twice on disk. Launched by a script in the repo:
-  `llama-server -m <gguf> -c 65536 -fa on --jinja -cram 2048 --port 8080`
+  `llama-server -m <gguf> -c 65536 -fa on --jinja -cram 2048 -np 1 --port 8080`
 - Supported: Ollama (requires `OLLAMA_CONTEXT_LENGTH=65536`; heyho detects and refuses a missing or too-large context), LM Studio, mlx_lm.server, vLLM. heyho always sends `max_tokens`.
 - At startup heyho reads the real context size (llama-server `/props`, Ollama `/api/ps`, LM Studio `/api/v0/models`) and uses that number, never a default.
 

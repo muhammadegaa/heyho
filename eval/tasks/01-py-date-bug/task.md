@@ -1,0 +1,1 @@
+A user of `timeparse` reports that `to_utc(parse_datetime("2024-03-10T09:00:00-03:30"))` gives 11:30 UTC, but it should be 12:30. They noticed it on timestamps from their office in St. John's, Newfoundland; their Indian timestamps with `+05:30` come out right. Please find the cause and fix it. The tests run with `python3 -m unittest discover -s tests`.

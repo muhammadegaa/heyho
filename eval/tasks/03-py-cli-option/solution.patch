@@ -1,0 +1,82 @@
+diff --git a/README.md b/README.md
+index d00d029..7c7d615 100644
+--- a/README.md
++++ b/README.md
+@@ -22,6 +22,7 @@ Options:
+ |---|---|
+ | `--level LEVEL` | ignore entries below LEVEL (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+ | `--by {level,component,message}` | what to group by; `message` groups messages that differ only in numbers or ids |
++| `--since WHEN` | only entries at or after WHEN: a UTC timestamp (`2024-03-10T09:00:00Z`) or a duration (`45s`, `30m`, `2h`, `1d`) counted back from the newest entry of any level |
+ | `--top N` | show only the N largest groups (the total still counts every entry) |
+ | `--format {text,json}` | output format |
+ 
+diff --git a/logsum/cli.py b/logsum/cli.py
+index ba6131c..ae46846 100644
+--- a/logsum/cli.py
++++ b/logsum/cli.py
+@@ -1,10 +1,12 @@
+ """Command-line interface."""
+ 
+ import argparse
++import re
+ import sys
++from datetime import timedelta
+ 
+ from . import __version__
+-from .records import LEVELS, level_rank, read_records
++from .records import LEVELS, level_rank, parse_timestamp, read_records
+ from .render import render_json, render_text
+ from .summary import GROUP_KEYS, summarize
+ 
+@@ -19,6 +21,24 @@ def positive_int(text):
+     return value
+ 
+ 
++DURATION = re.compile(r"(\d+)([smhd])")
++
++DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
++
++
++def since_value(text):
++    """Parse --since: an absolute timestamp, or a duration back from the newest entry."""
++    match = DURATION.fullmatch(text)
++    if match:
++        return timedelta(**{DURATION_UNITS[match[2]]: int(match[1])})
++    try:
++        return parse_timestamp(text)
++    except ValueError:
++        raise argparse.ArgumentTypeError(
++            f"expected a UTC timestamp like 2024-03-10T09:00:00Z or a duration like 2h, got {text!r}"
++        ) from None
++
++
+ def build_parser():
+     parser = argparse.ArgumentParser(prog="logsum", description="Summarise application log files.")
+     parser.add_argument("files", nargs="*", metavar="FILE", help="log files to read (default: stdin)")
+@@ -30,6 +50,13 @@ def build_parser():
+         help="ignore entries below this level",
+     )
+     parser.add_argument("--by", choices=sorted(GROUP_KEYS), default="level", help="what to group entries by")
++    parser.add_argument(
++        "--since",
++        type=since_value,
++        metavar="WHEN",
++        help="only entries at or after WHEN: a UTC timestamp, or a duration (45s, 30m, 2h, 1d) "
++        "counted back from the newest entry",
++    )
+     parser.add_argument("--top", type=positive_int, metavar="N", help="show only the N largest groups")
+     parser.add_argument("--format", choices=("text", "json"), default="text", help="output format")
+     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+@@ -44,6 +71,12 @@ def main(argv=None):
+         print(f"logsum: cannot read {exc.filename}: {exc.strerror}", file=sys.stderr)
+         return 1
+ 
++    if args.since is not None and records:
++        cutoff = args.since
++        if isinstance(cutoff, timedelta):
++            cutoff = max(record.timestamp for record in records) - cutoff
++        records = [record for record in records if record.timestamp >= cutoff]
++
+     minimum = level_rank(args.level)
+     records = [record for record in records if level_rank(record.level) >= minimum]
+ 

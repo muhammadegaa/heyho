@@ -1,0 +1,1 @@
+The name `parse_qty` keeps confusing people, so please rename that function to `parse_quantity` everywhere in the project: the definition, every import and call site, the package exports and the tests. Only that one function is renamed; leave every other name as it is. Behaviour must not change. The tests run with `python3 -m unittest discover -s tests`.

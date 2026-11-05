@@ -1,0 +1,163 @@
+diff --git a/README.md b/README.md
+index c06739a..4be0fa5 100644
+--- a/README.md
++++ b/README.md
+@@ -4,15 +4,15 @@ Stock keeping for a small warehouse: quantities with units, stock levels per
+ location, order lines and CSV imports.
+ 
+ ```python
+-from stockkeeper import Inventory, parse_qty, parse_qty_range
++from stockkeeper import Inventory, parse_quantity, parse_qty_range
+ 
+-parse_qty("2.5 kg")            # Quantity(amount=Decimal('2.5'), unit='kg')
+-parse_qty("12")                # Quantity(amount=Decimal('12'), unit='ea')
++parse_quantity("2.5 kg")            # Quantity(amount=Decimal('2.5'), unit='kg')
++parse_quantity("12")                # Quantity(amount=Decimal('12'), unit='ea')
+ parse_qty_range("100g to 1kg") # (0.1 kg, 1 kg)
+ 
+ stock = Inventory()
+-stock.receive("BEANS-1KG", parse_qty("20 kg"))
+-stock.take("BEANS-1KG", parse_qty("2500 g"))
++stock.receive("BEANS-1KG", parse_quantity("20 kg"))
++stock.take("BEANS-1KG", parse_quantity("2500 g"))
+ ```
+ 
+ Command line:
+diff --git a/stockkeeper/__init__.py b/stockkeeper/__init__.py
+index 3353d5a..4f4701b 100644
+--- a/stockkeeper/__init__.py
++++ b/stockkeeper/__init__.py
+@@ -2,7 +2,7 @@
+ 
+ from .inventory import Inventory, OutOfStock
+ from .orders import OrderLine, parse_order
+-from .quantities import Quantity, format_quantity, parse_qty, parse_qty_range
++from .quantities import Quantity, format_quantity, parse_qty_range, parse_quantity
+ 
+ __all__ = [
+     "Inventory",
+@@ -11,6 +11,6 @@ __all__ = [
+     "Quantity",
+     "format_quantity",
+     "parse_order",
+-    "parse_qty",
+     "parse_qty_range",
++    "parse_quantity",
+ ]
+diff --git a/stockkeeper/cli.py b/stockkeeper/cli.py
+index 0b3125a..f26238b 100644
+--- a/stockkeeper/cli.py
++++ b/stockkeeper/cli.py
+@@ -25,7 +25,7 @@ def main(argv=None):
+     args = build_parser().parse_args(argv)
+     if args.command == "convert":
+         try:
+-            converted = quantities.parse_qty(args.amount).to(args.to)
++            converted = quantities.parse_quantity(args.amount).to(args.to)
+         except ValueError as exc:
+             print(f"stockkeeper: {exc}", file=sys.stderr)
+             return 1
+diff --git a/stockkeeper/importer.py b/stockkeeper/importer.py
+index 42b74a5..68a3e85 100644
+--- a/stockkeeper/importer.py
++++ b/stockkeeper/importer.py
+@@ -7,7 +7,7 @@ quantity has none) and ``location`` are optional.
+ import csv
+ from dataclasses import dataclass, field
+ 
+-from .quantities import parse_qty as qty
++from .quantities import parse_quantity as qty
+ 
+ REQUIRED_COLUMNS = ("sku", "quantity")
+ 
+diff --git a/stockkeeper/orders.py b/stockkeeper/orders.py
+index dffcc0f..c168014 100644
+--- a/stockkeeper/orders.py
++++ b/stockkeeper/orders.py
+@@ -2,7 +2,7 @@
+ 
+ from dataclasses import dataclass
+ 
+-from .quantities import Quantity, parse_qty
++from .quantities import Quantity, parse_quantity
+ 
+ 
+ @dataclass(frozen=True)
+@@ -18,7 +18,7 @@ def parse_order_line(line):
+     *amount, sku = parts
+     if len(amount) > 1 and amount[-1] in ("x", "*"):
+         amount = amount[:-1]
+-    return OrderLine(sku.upper(), parse_qty(" ".join(amount)))
++    return OrderLine(sku.upper(), parse_quantity(" ".join(amount)))
+ 
+ 
+ def parse_order(text):
+diff --git a/stockkeeper/quantities.py b/stockkeeper/quantities.py
+index 77ecb75..27e51ac 100644
+--- a/stockkeeper/quantities.py
++++ b/stockkeeper/quantities.py
+@@ -54,7 +54,7 @@ class Quantity:
+         return format_quantity(self)
+ 
+ 
+-def parse_qty(text, default_unit="ea"):
++def parse_quantity(text, default_unit="ea"):
+     """Parse a quantity such as ``3``, ``2.5 kg``, ``250g`` or ``1,5 l``.
+ 
+     A bare number gets ``default_unit``. Raises ValueError for anything else.
+@@ -72,14 +72,14 @@ def parse_qty(text, default_unit="ea"):
+ def parse_qty_range(text, default_unit="ea"):
+     """Parse a range like ``2-5 kg`` or ``100g to 1kg`` into ``(low, high)``.
+ 
+-    Each end is read with :func:`parse_qty`. A unit written only on the upper
++    Each end is read with :func:`parse_quantity`. A unit written only on the upper
+     end applies to both, and the lower end is converted to the upper end's unit.
+     """
+     match = _RANGE.fullmatch(text.strip())
+     if match is None:
+         raise ValueError(f"not a quantity range: {text!r}")
+-    high = parse_qty(match["high"], default_unit)
+-    low = parse_qty(match["low"], high.unit).to(high.unit)
++    high = parse_quantity(match["high"], default_unit)
++    low = parse_quantity(match["low"], high.unit).to(high.unit)
+     if low.amount > high.amount:
+         raise ValueError(f"range goes backwards: {text!r}")
+     return low, high
+diff --git a/tests/test_quantities.py b/tests/test_quantities.py
+index fe70f05..0b2c62b 100644
+--- a/tests/test_quantities.py
++++ b/tests/test_quantities.py
+@@ -1,25 +1,25 @@
+ import unittest
+ from decimal import Decimal
+ 
+-from stockkeeper.quantities import Quantity, format_quantity, parse_qty, parse_qty_range
++from stockkeeper.quantities import Quantity, format_quantity, parse_quantity, parse_qty_range
+ 
+ 
+ class ParseQuantityTests(unittest.TestCase):
+     def test_numbers_with_units(self):
+-        self.assertEqual(parse_qty("2.5 kg"), Quantity(Decimal("2.5"), "kg"))
+-        self.assertEqual(parse_qty("250g"), Quantity(Decimal("250"), "g"))
+-        self.assertEqual(parse_qty("1,5 L"), Quantity(Decimal("1.5"), "l"))
+-        self.assertEqual(parse_qty("3 boxes"), Quantity(Decimal("3"), "box"))
++        self.assertEqual(parse_quantity("2.5 kg"), Quantity(Decimal("2.5"), "kg"))
++        self.assertEqual(parse_quantity("250g"), Quantity(Decimal("250"), "g"))
++        self.assertEqual(parse_quantity("1,5 L"), Quantity(Decimal("1.5"), "l"))
++        self.assertEqual(parse_quantity("3 boxes"), Quantity(Decimal("3"), "box"))
+ 
+     def test_bare_numbers_use_the_default_unit(self):
+-        self.assertEqual(parse_qty("12"), Quantity(Decimal("12"), "ea"))
+-        self.assertEqual(parse_qty(" 750 ", default_unit="ml"), Quantity(Decimal("750"), "ml"))
++        self.assertEqual(parse_quantity("12"), Quantity(Decimal("12"), "ea"))
++        self.assertEqual(parse_quantity(" 750 ", default_unit="ml"), Quantity(Decimal("750"), "ml"))
+ 
+     def test_rejects_garbage(self):
+         for text in ("", "kg", "two", "3 parsecs", "-1"):
+             with self.subTest(text=text):
+                 with self.assertRaises(ValueError):
+-                    parse_qty(text)
++                    parse_quantity(text)
+ 
+ 
+ class RangeTests(unittest.TestCase):

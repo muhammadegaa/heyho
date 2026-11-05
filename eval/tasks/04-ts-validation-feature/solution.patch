@@ -1,0 +1,72 @@
+diff --git a/src/bookings.ts b/src/bookings.ts
+index 8626970..b53744d 100644
+--- a/src/bookings.ts
++++ b/src/bookings.ts
+@@ -1,6 +1,6 @@
+-import { ConflictError } from "./errors";
++import { ConflictError, ValidationError } from "./errors";
+ import { findRoom } from "./rooms";
+-import { formatSlot } from "./time";
++import { formatSlot, isAligned, minutesBetween, parseInstant } from "./time";
+ 
+ export interface BookingRequest {
+   roomId: string;
+@@ -14,6 +14,58 @@ export interface Booking extends BookingRequest {
+   id: number;
+ }
+ 
++const REQUEST_FIELDS = ["roomId", "start", "end", "attendees", "title"];
++const SLOT_MINUTES = 15;
++const MAX_BOOKING_MINUTES = 4 * 60;
++const MAX_TITLE_LENGTH = 80;
++const DEFAULT_TITLE = "Untitled booking";
++
++function parseTime(value: unknown, field: "start" | "end"): Date {
++  const instant = typeof value === "string" ? parseInstant(value) : null;
++  if (!instant) throw new ValidationError(field, `${field} must be an ISO 8601 timestamp with a timezone`);
++  if (!isAligned(instant, SLOT_MINUTES)) {
++    throw new ValidationError(field, `${field} must be on a ${SLOT_MINUTES}-minute boundary`);
++  }
++  return instant;
++}
++
++/** Validate the body of POST /bookings. See docs/booking-requests.md. */
++export function parseBookingRequest(input: unknown): BookingRequest {
++  if (typeof input !== "object" || input === null || Array.isArray(input)) {
++    throw new ValidationError("request", "request must be an object");
++  }
++  const body = input as Record<string, unknown>;
++  const unexpected = Object.keys(body).find((key) => !REQUEST_FIELDS.includes(key));
++  if (unexpected !== undefined) throw new ValidationError(unexpected, `unexpected field: ${unexpected}`);
++
++  const { roomId, attendees, title } = body;
++  if (typeof roomId !== "string" || roomId === "") throw new ValidationError("roomId", "roomId is required");
++  const room = findRoom(roomId);
++  if (!room) throw new ValidationError("roomId", `unknown room: ${roomId}`);
++
++  const start = parseTime(body.start, "start");
++  const end = parseTime(body.end, "end");
++  if (end <= start) throw new ValidationError("end", "end must be after start");
++  if (minutesBetween(start, end) > MAX_BOOKING_MINUTES) {
++    throw new ValidationError("end", "a booking can be at most 4 hours long");
++  }
++
++  if (typeof attendees !== "number" || !Number.isInteger(attendees) || attendees < 1) {
++    throw new ValidationError("attendees", "attendees must be a whole number of at least 1");
++  }
++  if (attendees > room.capacity) {
++    throw new ValidationError("attendees", `${room.name} holds at most ${room.capacity} people`);
++  }
++
++  if ("title" in body && typeof title !== "string") throw new ValidationError("title", "title must be a string");
++  const trimmed = typeof title === "string" ? title.trim() : "";
++  if (trimmed.length > MAX_TITLE_LENGTH) {
++    throw new ValidationError("title", `title must be at most ${MAX_TITLE_LENGTH} characters`);
++  }
++
++  return { roomId, start, end, attendees, title: trimmed || DEFAULT_TITLE };
++}
++
+ interface Interval {
+   start: Date;
+   end: Date;

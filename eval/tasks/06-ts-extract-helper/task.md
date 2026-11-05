@@ -1,0 +1,1 @@
+The slug logic is copy-pasted three times: `postSlug` in `src/posts.ts`, `tagSlug` in `src/tags.ts` and `authorHandle` in `src/authors.ts`. Please extract it into one shared helper and make all three use it. This is a pure refactor: every function must return exactly what it returns today for every input, including the length limits and fallbacks. The tests run with `bun test`.

@@ -1,0 +1,1 @@
+`bun test` fails in `test/invoice.test.ts` ("spreads a fixed discount over equally priced lines") with "invoice does not balance". Customers see the same error at checkout when they use the WELCOME5 code with some baskets. Please find the root cause and fix it. The balance check in the invoice builder is correct and should stay.

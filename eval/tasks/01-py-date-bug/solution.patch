@@ -1,0 +1,20 @@
+diff --git a/timeparse/tz.py b/timeparse/tz.py
+index bab1391..807b961 100644
+--- a/timeparse/tz.py
++++ b/timeparse/tz.py
+@@ -42,12 +42,14 @@ def parse_offset(text):
+     if match is None:
+         raise ParseError(text, "not a UTC offset")
+     sign, hours, minutes = match.groups()
+-    hours = int(sign + hours)
++    hours = int(hours)
+     minutes = int(minutes or 0)
+     if minutes >= 60:
+         raise ParseError(text, "offset minutes must be below 60")
+ 
+     offset = timedelta(hours=hours, minutes=minutes)
++    if sign == "-":
++        offset = -offset
+     if abs(offset) > MAX_OFFSET:
+         raise ParseError(text, "offset is more than 14 hours from UTC")
+     return timezone(offset)

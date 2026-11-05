@@ -1,0 +1,23 @@
+diff --git a/src/money.ts b/src/money.ts
+index 73a87f6..34914ef 100644
+--- a/src/money.ts
++++ b/src/money.ts
+@@ -51,11 +51,13 @@ export function allocate(totalCents: Cents, weights: readonly number[]): Cents[]
+     throw new RangeError("allocate: weights must add up to more than zero");
+   }
+ 
+-  const shares = weights.map((weight) => Math.round((totalCents * weight) / weightSum));
+-  let leftover = totalCents - sumCents(shares);
+-  for (let i = 0; leftover > 0; i = (i + 1) % shares.length) {
+-    shares[i] += 1;
+-    leftover -= 1;
++  const shares = weights.map((weight) => Math.floor((totalCents * weight) / weightSum));
++  const leftover = totalCents - sumCents(shares);
++  const byFraction = weights
++    .map((weight, index) => ({ index, fraction: (totalCents * weight) % weightSum }))
++    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
++  for (let k = 0; k < leftover; k++) {
++    shares[byFraction[k].index] += 1;
+   }
+   return shares;
+ }
