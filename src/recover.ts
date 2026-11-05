@@ -43,7 +43,9 @@ export function parseArgs(raw: string): { args: Record<string, unknown>; repaire
       return `The tool arguments are not valid JSON, so the call was not executed. Reissue the call with valid JSON arguments. Received: ${raw.slice(0, 200)}`;
     }
   }
-  if (typeof value === "string") return parseArgs(value);
+  // A JSON-encoded object inside a string. Only unwrap valid JSON: jsonrepair turns plain
+  // text into a string of itself, which would recurse forever.
+  if (typeof value === "string" && !repaired) return parseArgs(value);
   if (!value || typeof value !== "object" || Array.isArray(value)) return `Tool arguments must be a JSON object. Received: ${raw.slice(0, 200)}`;
   return { args: value as Record<string, unknown>, repaired };
 }

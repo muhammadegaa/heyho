@@ -14,6 +14,7 @@ test("parseArgs repairs JSON and refuses garbage", () => {
   expect(parseArgs('"{\\"path\\": \\"a.ts\\"}"')).toEqual({ args: { path: "a.ts" }, repaired: false });
   expect(parseArgs("")).toEqual({ args: {}, repaired: false });
   expect(typeof parseArgs("[1,2]")).toBe("string");
+  expect(parseArgs("read the file a.ts")).toContain("must be a JSON object");
 });
 
 test("normalizeArgs maps aliases, converts scalars, reports missing keys", () => {
