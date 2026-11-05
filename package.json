@@ -1,0 +1,29 @@
+{
+  "name": "heyho",
+  "version": "0.0.1",
+  "description": "Terminal coding agent for open-weight models on your own machine",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "heyho": "dist/cli.js"
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "bun src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build src/cli.ts --target node --outdir dist",
+    "eval": "bun eval/run.ts"
+  },
+  "dependencies": {
+    "jsonrepair": "^3.15.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}
