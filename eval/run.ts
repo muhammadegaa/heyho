@@ -174,6 +174,7 @@ async function runOne(task: Task, n: number, outDir: string) {
     run: n,
     harness: opt.harness,
     profile: opt.profile,
+    commit: COMMIT,
     pass: v.code === 0,
     status,
     wallMs,
@@ -206,6 +207,8 @@ function previousResults(resultsDir: string, current: string): Map<string, numbe
   return rates;
 }
 
+// The heyho commit each result was measured on; "+dirty" if src/ had uncommitted changes.
+const COMMIT = sh("git", ["rev-parse", "--short", "HEAD"], ROOT).trim() + (sh("git", ["status", "--porcelain", "src"], ROOT).trim() ? "+dirty" : "");
 const tasks = loadTasks();
 if (!tasks.length) throw new Error(`no tasks match "${opt.tasks}"`);
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -216,7 +219,7 @@ const resultsFile = `${stamp}-${opt.harness}-${opt.profile}.jsonl`;
 const prev = previousResults(resultsDir, resultsFile);
 const runs = Number(opt.runs) || 1;
 
-console.log(`${opt.harness} · ${opt.profile} · ${tasks.length} tasks × ${runs} runs → eval/results/${resultsFile}`);
+console.log(`${opt.harness} · ${opt.profile} · heyho ${COMMIT} · ${tasks.length} tasks × ${runs} runs → eval/results/${resultsFile}`);
 const rows = [];
 for (const task of tasks)
   for (let n = 1; n <= runs; n++) {
