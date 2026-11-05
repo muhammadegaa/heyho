@@ -11,7 +11,7 @@ import type { ToolContext } from "../src/tools/types.ts";
 // A fake OpenAI-compatible server that streams scripted replies and records requests.
 type Scripted = { text?: string; calls?: [string, string][]; finish?: string; drop?: boolean; status?: number };
 let script: Scripted[] = [];
-const requests: { messages: Message[]; tool_choice: string }[] = [];
+const requests: { messages: Message[]; tool_choice: string; tools: unknown }[] = [];
 let server: Server;
 let profile: Profile;
 
@@ -67,9 +67,12 @@ test("each request extends the previous one unchanged (append-only prefix)", asy
   ];
   expect((await run()).status).toBe("done");
   expect(requests.length).toBe(3);
+  // Compared as serialized text, not deep equality: a reordered key changes the bytes the
+  // server tokenizes and invalidates its cache from that point.
   for (let i = 1; i < requests.length; i++) {
-    const prev = requests[i - 1].messages;
-    expect(requests[i].messages.slice(0, prev.length)).toEqual(prev);
+    const prev = requests[i - 1];
+    expect(JSON.stringify(requests[i].messages.slice(0, prev.messages.length))).toBe(JSON.stringify(prev.messages));
+    expect(JSON.stringify(requests[i].tools)).toBe(JSON.stringify(prev.tools));
   }
   expect(messages.filter((m) => m.role === "tool").length).toBe(3);
   expect(stats.toolCalls).toEqual({ read: 1, edit: 1, bash: 1 });
