@@ -53,7 +53,12 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
   const ctrl = new AbortController();
   const abort = () => ctrl.abort();
   opts.signal?.addEventListener("abort", abort);
-  let timer = setTimeout(abort, FIRST_BYTE_MS);
+  let timedOut = false;
+  const expire = () => {
+    timedOut = true;
+    ctrl.abort();
+  };
+  let timer = setTimeout(expire, FIRST_BYTE_MS);
   try {
     let res: Response;
     try {
@@ -65,6 +70,8 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
       });
     } catch (e) {
       if (opts.signal?.aborted) throw e;
+      // A server still busy after this long would be just as slow on a retry.
+      if (timedOut) throw new Error(`no response from the server within ${FIRST_BYTE_MS / 1000} s`);
       throw new RetryableError(`connection failed: ${(e as Error).message}`);
     }
     if (!res.ok) {
@@ -81,11 +88,20 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
     const usage: Usage = { prompt: 0, cached: 0, completion: 0 };
     let buf = "";
     const decoder = new TextDecoder();
+    const reader = res.body!.getReader();
 
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    for (;;) {
+      let chunk: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        chunk = await reader.read();
+      } catch (e) {
+        if (opts.signal?.aborted) throw e;
+        throw new RetryableError(timedOut ? `no data from the server for ${IDLE_MS / 1000} s` : `stream dropped: ${(e as Error).message}`);
+      }
+      if (chunk.done) break;
       clearTimeout(timer);
-      timer = setTimeout(abort, IDLE_MS);
-      buf += decoder.decode(chunk, { stream: true });
+      timer = setTimeout(expire, IDLE_MS);
+      buf += decoder.decode(chunk.value, { stream: true });
       let nl: number;
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl).trim();

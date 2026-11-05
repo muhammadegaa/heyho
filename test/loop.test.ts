@@ -9,7 +9,7 @@ import { TOOLS } from "../src/tools/index.ts";
 import type { ToolContext } from "../src/tools/types.ts";
 
 // A fake OpenAI-compatible server that streams scripted replies and records requests.
-type Scripted = { text?: string; calls?: [string, string][]; finish?: string };
+type Scripted = { text?: string; calls?: [string, string][]; finish?: string; drop?: boolean };
 let script: Scripted[] = [];
 const requests: { messages: Message[]; tool_choice: string }[] = [];
 let server: Server;
@@ -22,8 +22,14 @@ beforeAll(async () => {
     req.on("end", () => {
       requests.push(JSON.parse(body));
       const s = script.shift() ?? { text: "done" };
-      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      // On a reused keep-alive connection, Bun's fetch resent the dropped request by itself
+      // and joined both bodies into one stream, so the drop never reached heyho.
+      res.writeHead(200, { "Content-Type": "text/event-stream", Connection: "close" });
       const send = (o: object) => res.write(`data: ${JSON.stringify(o)}\n\n`);
+      if (s.drop) {
+        send({ choices: [{ index: 0, delta: { content: "partial" } }] });
+        return setTimeout(() => res.destroy(), 20);
+      }
       if (s.text) for (const part of s.text.match(/.{1,5}/gs) ?? []) send({ choices: [{ index: 0, delta: { content: part } }] });
       (s.calls ?? []).forEach(([name, args], i) => {
         send({ choices: [{ index: 0, delta: { tool_calls: [{ index: i, id: `c${i}`, type: "function", function: { name, arguments: "" } }] } }] });
@@ -100,6 +106,14 @@ test("a second cutoff in a row stops the run with every call answered", async ()
   const answered = messages.flatMap((m) => (m.role === "tool" ? [m.tool_call_id] : []));
   expect(answered).toEqual(ids);
 });
+
+test("a stream that drops partway is retried", async () => {
+  const { run, messages } = setup();
+  script = [{ drop: true }, { text: "done after retry" }];
+  expect((await run()).status).toBe("done");
+  expect(requests.length).toBe(2);
+  expect((messages.at(-1) as { content: string }).content).toBe("done after retry");
+}, 10_000);
 
 test("repeated identical calls stop the run", async () => {
   const { run } = setup();
