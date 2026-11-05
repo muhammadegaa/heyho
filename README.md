@@ -2,7 +2,21 @@
 
 A terminal coding agent for open-weight models running on your own machine. It reads a codebase, edits files, runs commands and tests, reads the results and keeps going until the task is done. It talks to any OpenAI-compatible server (llama.cpp's `llama-server`, Ollama, LM Studio, MLX, vLLM); nothing in the loop calls a cloud service.
 
-**Status:** pre-alpha. Milestone 1 (minimal loop + eval harness) is in progress. Not usable yet.
+**Status:** pre-alpha. Milestone 1 (minimal loop + eval harness) is in progress. It completes small single-repo tasks; it is not ready for daily use.
+
+## Try it (macOS, Bun)
+
+```sh
+git clone https://github.com/muhammadegaa/heyho && cd heyho && bun install
+scripts/serve.sh path/to/model.gguf          # llama-server on :8080 with 64k context
+bun src/cli.ts --cwd path/to/repo            # interactive; edits and commands ask first
+bun src/cli.ts --cwd path/to/repo "fix the failing test"           # one task, then exit
+bun src/cli.ts --cwd path/to/repo --yolo "fix the failing test"    # no prompts, bash sandboxed
+```
+
+`--profile` picks the model settings (`qwen3-coder`, `qwen3.6`, or hosted `or-sonnet` / `or-qwen3.6` via OpenRouter). `--base-url` points at any other OpenAI-compatible server.
+
+The eval: `bun eval/run.ts --profile qwen3-coder --tasks smoke` (or `all`, or task ids; `--harness pi` runs the same tasks through Pi).
 
 Built and measured on a MacBook Pro M1 Max with 64 GB, targeting Qwen3.6-35B-A3B at Q4 with a 64k context.
 
