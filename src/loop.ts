@@ -1,4 +1,4 @@
-import { chat, type Message, type Profile, type ToolCall, type Usage } from "./model.ts";
+import { chat, ContextOverflowError, type Message, type Profile, type Reply, type ToolCall, type Usage } from "./model.ts";
 import { looksLikeTextToolCall, LoopGuard, normalizeArgs, parseArgs, toolName } from "./recover.ts";
 import { toolSchemas } from "./tools/index.ts";
 import { fail, type Tool, type ToolContext, type ToolResult } from "./tools/types.ts";
@@ -6,8 +6,7 @@ import { fail, type Tool, type ToolContext, type ToolResult } from "./tools/type
 export type AgentEvent =
   | { type: "text"; text: string }
   | { type: "turn"; step: number; usage: Usage; ms: number }
-  | { type: "tool"; name: string; args: Record<string, unknown>; result: ToolResult }
-  | { type: "notice"; text: string };
+  | { type: "tool"; name: string; args: Record<string, unknown>; result: ToolResult };
 
 export type Stats = {
   steps: number;
@@ -58,7 +57,13 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
   for (let step = 1; step <= o.maxSteps; step++) {
     if (o.signal?.aborted) return { status: "interrupted" };
     const t0 = Date.now();
-    const reply = await chat(o.profile, o.messages, schemas, { onText: (text) => o.onEvent({ type: "text", text }), signal: o.signal });
+    let reply: Reply;
+    try {
+      reply = await chat(o.profile, o.messages, schemas, { onText: (text) => o.onEvent({ type: "text", text }), signal: o.signal });
+    } catch (e) {
+      if (e instanceof ContextOverflowError) return { status: "context_full", reason: e.message };
+      throw e;
+    }
     o.stats.steps = step;
     o.stats.turns.push(reply.usage);
     o.record({ usage: reply.usage });
@@ -113,7 +118,7 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
 
     const last = reply.usage;
     if (last.prompt + last.completion > 0.85 * o.contextSize)
-      return { status: "context_full", reason: `${last.prompt + last.completion} of ${o.contextSize} tokens used; compaction arrives in M2` };
+      return { status: "context_full", reason: `${last.prompt + last.completion} of ${o.contextSize} tokens used` };
   }
 
   push({ role: "user", content: "You have reached the step limit. Do not call any tools. Reply with what you changed, what is left to do, and the current state." });

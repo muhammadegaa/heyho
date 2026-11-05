@@ -9,7 +9,7 @@ import { TOOLS } from "../src/tools/index.ts";
 import type { ToolContext } from "../src/tools/types.ts";
 
 // A fake OpenAI-compatible server that streams scripted replies and records requests.
-type Scripted = { text?: string; calls?: [string, string][]; finish?: string; drop?: boolean };
+type Scripted = { text?: string; calls?: [string, string][]; finish?: string; drop?: boolean; status?: number };
 let script: Scripted[] = [];
 const requests: { messages: Message[]; tool_choice: string }[] = [];
 let server: Server;
@@ -22,6 +22,7 @@ beforeAll(async () => {
     req.on("end", () => {
       requests.push(JSON.parse(body));
       const s = script.shift() ?? { text: "done" };
+      if (s.status) return res.writeHead(s.status).end(s.text);
       // On a reused keep-alive connection, Bun's fetch resent the dropped request by itself
       // and joined both bodies into one stream, so the drop never reached heyho.
       res.writeHead(200, { "Content-Type": "text/event-stream", Connection: "close" });
@@ -114,6 +115,12 @@ test("a stream that drops partway is retried", async () => {
   expect(requests.length).toBe(2);
   expect((messages.at(-1) as { content: string }).content).toBe("done after retry");
 }, 10_000);
+
+test("a context overflow from the server ends the run as context_full", async () => {
+  const { run } = setup();
+  script = [{ status: 400, text: '{"error":{"message":"the request exceeds the available context size"}}' }];
+  expect((await run()).status).toBe("context_full");
+});
 
 test("repeated identical calls stop the run", async () => {
   const { run } = setup();

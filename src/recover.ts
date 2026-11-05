@@ -74,8 +74,8 @@ export function normalizeArgs(tool: Tool, input: Record<string, unknown>): Recor
   return args;
 }
 
-// Tool calls written into the message text instead of the tool_calls field. Counted in M1;
-// parsed and executed from M2.
+// Tool calls written into the message text instead of the tool_calls field. Only counted;
+// a turn like this ends the run.
 export const looksLikeTextToolCall = (content: string | null) =>
   !!content && /<tool_call>|<function=\w+|"name"\s*:\s*"(read|edit|write|bash|search)"/.test(content);
 

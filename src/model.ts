@@ -1,5 +1,5 @@
 export type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
-export type AssistantMessage = { role: "assistant"; content: string | null; tool_calls?: ToolCall[]; reasoning_content?: string };
+export type AssistantMessage = { role: "assistant"; content: string | null; tool_calls?: ToolCall[] };
 export type Message =
   | { role: "system" | "user"; content: string }
   | AssistantMessage
@@ -13,7 +13,6 @@ export type Profile = {
   apiKey?: string;
   maxTokens: number;
   sampling?: Record<string, unknown>;
-  sendReasoning?: boolean;
 };
 
 export type Usage = { prompt: number; cached: number; completion: number; prefillMs?: number; genTps?: number };
@@ -82,7 +81,6 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
     }
 
     let content = "";
-    let reasoning = "";
     let finish = "";
     const calls: ToolCall[] = [];
     const usage: Usage = { prompt: 0, cached: 0, completion: 0 };
@@ -117,8 +115,6 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
           content += d.content;
           opts.onText?.(d.content);
         }
-        if (d?.reasoning_content) reasoning += d.reasoning_content;
-        if (d?.reasoning) reasoning += d.reasoning;
         for (const tc of d?.tool_calls ?? []) {
           const c = (calls[tc.index ?? calls.length] ??= { id: "", type: "function", function: { name: "", arguments: "" } });
           if (tc.id) c.id = tc.id;
@@ -144,7 +140,6 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
     const toolCalls = calls.filter(Boolean);
     toolCalls.forEach((c, i) => (c.id ||= `call_${Date.now()}_${i}`));
     if (toolCalls.length) message.tool_calls = toolCalls;
-    if (reasoning && p.sendReasoning) message.reasoning_content = reasoning;
     return { message, finish: finish || "stop", usage };
   } finally {
     clearTimeout(timer);

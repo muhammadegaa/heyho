@@ -106,7 +106,7 @@ async function main() {
       const arg = String(e.args.path ?? e.args.command ?? e.args.pattern ?? e.args.glob ?? "").split("\n")[0].slice(0, 100);
       const first = e.result.text.split("\n")[0].slice(0, 120);
       process.stderr.write(`${dim("→")} ${e.name} ${arg}  ${e.result.ok ? dim(first) : red(first)}\n`);
-    } else if (e.type === "turn") {
+    } else {
       const u = e.usage;
       const cached = u.prompt ? Math.round((100 * u.cached) / u.prompt) : 0;
       const prefill = u.prefillMs !== undefined ? ` · prefill ${(u.prefillMs / 1000).toFixed(1)} s` : "";
@@ -114,7 +114,7 @@ async function main() {
       if (!atLineStart) process.stdout.write("\n");
       atLineStart = true;
       process.stderr.write(dim(`[step ${e.step} · ${u.prompt} prompt tokens, ${cached}% cached${prefill}${tps} · ${(e.ms / 1000).toFixed(1)} s]\n`));
-    } else process.stderr.write(dim(e.text) + "\n");
+    }
   };
 
   let current: AbortController | null = null;
