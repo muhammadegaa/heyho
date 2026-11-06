@@ -94,15 +94,15 @@ Build 9140 can't load current Qwen3.6 GGUFs. They include the multi-token-predic
 
 2026-11-06. The same six tasks, three runs each, through heyho 6500b41 (the same `src/` as d00c370). The `qwen3.6` profile: Q4_K_M, sampling from the model card, thinking on (the model's default), earlier thinking not sent back. llama-server b11850 with a 64k context. The Mac ran on battery throughout and went to sleep at 1% charge during the last run, which is invalid.
 
-| Task | Qwen3-Coder (both heyho evals) | Qwen3.6 |
-|---|---|---|
-| 01 date bug | 1/6 | 3/3 |
-| 02 cross-file bug | 3/6 | 0/3 |
-| 03 CLI option | 5/6 | 3/3 |
-| 04 validation feature | 0/6 | 2/3 |
-| 05 rename | 0/6 | 2/2 |
-| 06 extract helper | 5/6 | 3/3 |
-| **Total** | **14/36 (39%)** | **13/17 (76%)** |
+| Task | Qwen3-Coder (both heyho evals) | Qwen3.6, heyho | Qwen3.6, Pi |
+|---|---|---|---|
+| 01 date bug | 1/6 | 3/3 | 3/3 |
+| 02 cross-file bug | 3/6 | 0/3 | 1/3 |
+| 03 CLI option | 5/6 | 3/3 | 2/3 |
+| 04 validation feature | 0/6 | 2/3 | 1/3 |
+| 05 rename | 0/6 | 2/2 | 3/3 |
+| 06 extract helper | 5/6 | 3/3 | 1/3 |
+| **Total** | **14/36 (39%)** | **13/17 (76%)** | **11/18 (61%)** |
 
 - Through the same harness, Qwen3.6 about doubles the pass rate. It passed 04 and 05, which Qwen3-Coder never did, and fixed 01 in 7–9 steps each time.
 - It took fewer steps (median 11 against 32) and generated about as many tokens, thinking included (median 4.4k). The median run took 161 s.
@@ -110,3 +110,6 @@ Build 9140 can't load current Qwen3.6 GGUFs. They include the multi-token-predic
 - 04 run 2 missed spec rules 5, 7 and 8.
 - Cache reuse after the first turn was lower than with Qwen3-Coder (median 0.87 against 0.97). The cause hasn't been measured.
 - The step and time limits stopped no valid run.
+- Pi ran next on the same server, on AC power. Its 11/18 is level with heyho's 13/17 within run-to-run variation, and its failures are model mistakes too: the same `allocate` fix on 02, different spec rules on 04, and on 06 a shared helper that turns "Don’t Panic" into `don-t-panic` instead of `dont-panic`. Pi sends earlier thinking back as `reasoning_content`; heyho drops it. On this sample that made no visible difference to the pass rate.
+- Pi's median run was 101 s against heyho's 161 s, but the two runs aren't comparable on speed. During heyho's run, on battery, decoding at the same context size was 12–17% slower than during Pi's (for example 39.5 against 45.4 tok/s at 8–12k tokens), and it fell to 9 tok/s in the last ten minutes as the battery ran out.
+- With Qwen3.6, tasks 01, 03 and 05 pass almost every time under both harnesses, so only 02, 04 and 06 separate anything. At 18 runs per harness and a 70% pass rate, the standard error of the difference between two harnesses is about 15 points, so a difference needs to be about 30 points to stand out.
