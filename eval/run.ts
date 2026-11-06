@@ -150,9 +150,11 @@ async function runOne(task: Task, n: number, outDir: string) {
     const agentDir = mkdtempSync(join(tmpdir(), "heyho-pi-"));
     writeFileSync(join(agentDir, "models.json"), piModelsJson());
     // Pi has no sandbox of its own; run it under the same Seatbelt profile heyho uses.
+    // --no-skills: Pi otherwise loads every skill in ~/.agents/skills on this machine,
+    // which added ~19k tokens to each request in the first baseline.
     const r = await runWithLimit(
       "/usr/bin/sandbox-exec",
-      ["-p", seatbeltProfile(ws, false), PI_BIN, "--mode", "json", "--no-session", "--provider", "heyho", "--model", PROFILES[opt.profile!].model, prompt],
+      ["-p", seatbeltProfile(ws, false), PI_BIN, "--mode", "json", "--no-session", "--no-skills", "--provider", "heyho", "--model", PROFILES[opt.profile!].model, prompt],
       ws,
       { ...process.env, PI_CODING_AGENT_DIR: agentDir },
       WALL_LIMIT_MS,
