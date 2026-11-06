@@ -134,7 +134,7 @@ Every error message says what to do next. All file tools resolve real paths and 
 1. Copy the task to a temp directory, `git init`.
 2. Run `heyho --yolo "<task>"` with a step cap and a 20-minute wall limit.
 3. Copy in the hidden tests and run `verify.sh`.
-4. Record per run: pass, steps, tool calls by type, tool errors, recovered text calls, failed edits, compactions, prompt / cached / generated tokens, wall time.
+4. Record per run: pass, steps, tool calls by type, tool errors, recovered text calls, failed edits, compactions, prompt / cached / generated tokens, wall time, and whether the Mac slept during the run (such a run is invalid).
 5. Print a table compared with the previous run.
 
 Smoke = 3 tasks × 1 run (~15–20 min); full = 8 tasks × 3 runs (overnight).

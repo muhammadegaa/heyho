@@ -72,6 +72,19 @@ function runWithLimit(cmd: string, args: string[], cwd: string, env: NodeJS.Proc
   });
 }
 
+// True if macOS slept at any point between the two times: a Sleep or wake entry falls
+// inside the window. Wake entries catch a run that started as the machine went to sleep.
+// A run that spans a sleep has a meaningless wall time and can hit timeouts on wake.
+function macSlept(from: number, to: number) {
+  const cmd = "pmset -g log | grep -E '^[0-9-]+ [0-9:]+ [+-][0-9]{4} (Sleep|Wake|DarkWake) '";
+  const log = spawnSync("sh", ["-c", cmd], { encoding: "utf8", maxBuffer: 64 << 20 }).stdout ?? "";
+  return log.split("\n").some((line) => {
+    const m = line.match(/^(\S+) (\S+) ([+-]\d\d)(\d\d) (Sleep|Wake|DarkWake) +\t/);
+    const t = m ? Date.parse(`${m[1]}T${m[2]}${m[3]}:${m[4]}`) : NaN;
+    return t >= from && t <= to;
+  });
+}
+
 function piModelsJson(): string {
   const p = PROFILES[opt.profile!];
   return JSON.stringify({
@@ -179,6 +192,7 @@ async function runOne(task: Task, n: number, outDir: string) {
     commit: COMMIT,
     pass: v.code === 0,
     status,
+    slept: macSlept(t0, Date.now()),
     wallMs,
     steps: stats.steps,
     toolCalls: stats.toolCalls,
@@ -230,7 +244,7 @@ for (const task of tasks)
     writeFileSync(join(resultsDir, resultsFile), JSON.stringify(row) + "\n", { flag: "a" });
     const cache = row.cacheRateAfterFirst === null ? "-" : `${Math.round(100 * row.cacheRateAfterFirst)}%`;
     console.log(
-      `${row.pass ? "PASS" : "FAIL"}  ${task.id.padEnd(26)} run ${n}  ${row.status.padEnd(11)} ${String(row.steps ?? "-").padStart(3)} steps  ${(row.wallMs / 1000).toFixed(0).padStart(5)} s  cache ${cache}  tool errors ${row.toolErrors ?? "-"}`,
+      `${row.pass ? "PASS" : "FAIL"}  ${task.id.padEnd(26)} run ${n}  ${row.status.padEnd(11)} ${String(row.steps ?? "-").padStart(3)} steps  ${(row.wallMs / 1000).toFixed(0).padStart(5)} s  cache ${cache}  tool errors ${row.toolErrors ?? "-"}${row.slept ? "  SLEPT (invalid)" : ""}`,
     );
   }
 
@@ -242,4 +256,8 @@ for (const task of tasks) {
   console.log(`${task.id.padEnd(28)}${`${rs.filter((r) => r.pass).length}/${rs.length}`.padEnd(12)}${before === undefined ? "-" : `${Math.round(before * 100)}%`}`);
 }
 const passed = rows.filter((r) => r.pass).length;
-console.log(`\ntotal ${passed}/${rows.length} · wall ${(rows.reduce((a, r) => a + r.wallMs, 0) / 60000).toFixed(1)} min`);
+const sleptRuns = rows.filter((r) => r.slept).length;
+console.log(
+  `\ntotal ${passed}/${rows.length} · wall ${(rows.reduce((a, r) => a + r.wallMs, 0) / 60000).toFixed(1)} min` +
+    (sleptRuns ? ` · ${sleptRuns} runs overlapped a system sleep and are invalid` : ""),
+);
