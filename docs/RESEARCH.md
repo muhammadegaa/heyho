@@ -92,24 +92,23 @@ Build 9140 can't load current Qwen3.6 GGUFs. They include the multi-token-predic
 
 ## 7. Eval results: Qwen3.6-35B-A3B
 
-2026-11-06. The same six tasks, three runs each, through heyho 6500b41 (the same `src/` as d00c370). The `qwen3.6` profile: Q4_K_M, sampling from the model card, thinking on (the model's default), earlier thinking not sent back. llama-server b11850 with a 64k context. The Mac ran on battery throughout and went to sleep at 1% charge during the last run, which is invalid.
+2026-11-06. The same six tasks, three runs each, with the `qwen3.6` profile: Q4_K_M, sampling from the model card, thinking on (the model's default). llama-server b11850 with a 64k context. heyho ran twice with the same `src/` as d00c370: first on battery, when the Mac went to sleep at 1% charge during the last run (invalid), then on AC. Pi ran between the two, on AC.
 
-| Task | Qwen3-Coder (both heyho evals) | Qwen3.6, heyho | Qwen3.6, Pi |
+| Task | Qwen3-Coder, heyho (2 evals) | Qwen3.6, heyho (2 evals) | Qwen3.6, Pi |
 |---|---|---|---|
-| 01 date bug | 1/6 | 3/3 | 3/3 |
-| 02 cross-file bug | 3/6 | 0/3 | 1/3 |
-| 03 CLI option | 5/6 | 3/3 | 2/3 |
-| 04 validation feature | 0/6 | 2/3 | 1/3 |
-| 05 rename | 0/6 | 2/2 | 3/3 |
-| 06 extract helper | 5/6 | 3/3 | 1/3 |
-| **Total** | **14/36 (39%)** | **13/17 (76%)** | **11/18 (61%)** |
+| 01 date bug | 1/6 | 6/6 | 3/3 |
+| 02 cross-file bug | 3/6 | 0/6 | 1/3 |
+| 03 CLI option | 5/6 | 6/6 | 2/3 |
+| 04 validation feature | 0/6 | 4/6 | 1/3 |
+| 05 rename | 0/6 | 5/5 | 3/3 |
+| 06 extract helper | 5/6 | 6/6 | 1/3 |
+| **Total** | **14/36 (39%)** | **27/35 (77%)** | **11/18 (61%)** |
 
-- Through the same harness, Qwen3.6 about doubles the pass rate. It passed 04 and 05, which Qwen3-Coder never did, and fixed 01 in 7–9 steps each time.
-- It took fewer steps (median 11 against 32) and generated about as many tokens, thinking included (median 4.4k). The median run took 161 s.
-- 02 failed all three runs the same way. The model changed `Math.round` to `Math.floor` in `allocate` and kept the loop that gives spare cents to the first shares. That passes the reported test but breaks the contract in the doc comment directly above the function: spare cents go to the largest fractional parts, and a zero weight gets zero. Each run stopped after 8–11 steps.
-- 04 run 2 missed spec rules 5, 7 and 8.
-- Cache reuse after the first turn was lower than with Qwen3-Coder (median 0.87 against 0.97). The cause hasn't been measured.
-- The step and time limits stopped no valid run.
-- Pi ran next on the same server, on AC power. Its 11/18 is level with heyho's 13/17 within run-to-run variation, and its failures are model mistakes too: the same `allocate` fix on 02, different spec rules on 04, and on 06 a shared helper that turns "Don’t Panic" into `don-t-panic` instead of `dont-panic`. Pi sends earlier thinking back as `reasoning_content`; heyho drops it. On this sample that made no visible difference to the pass rate.
-- Pi's median run was 101 s against heyho's 161 s, but the two runs aren't comparable on speed. During heyho's run, on battery, decoding at the same context size was 12–17% slower than during Pi's (for example 39.5 against 45.4 tok/s at 8–12k tokens), and it fell to 9 tok/s in the last ten minutes as the battery ran out.
+- Through the same harness, Qwen3.6 about doubles the pass rate. It passed 04 and 05, which Qwen3-Coder never did, and fixed 01 in 7–10 steps each time.
+- heyho's 77% against Pi's 61% is not a reliable difference: the standard error of that gap is about 13 points.
+- Every failure is a model mistake. 02 never passed under heyho. Each fix made the reported test pass, by rounding down or by taking surplus cents back from the last shares, but kept handing out spare cents by position. That breaks the contract in the doc comment directly above `allocate`: spare cents go to the largest fractional parts, and a zero weight gets zero. 04 missed spec rules (5, 7 and 8 in both heyho failures; 10–13 under Pi). Under Pi, 06 twice produced a shared helper that turns "Don’t Panic" into `don-t-panic` instead of `dont-panic`.
+- The step and time limits stopped no valid run. Median steps were 9.5–11 for heyho and 10 for Pi, against 32 for Qwen3-Coder.
+- Speed, on AC with the same server: median run 127 s for heyho and 101 s for Pi, 50.5 against 38.3 minutes in total. Per task the gap goes both ways (heyho faster on 03, Pi on 01 and 02), and a few long runs dominate the totals (one heyho run on 06 took 40 steps and 764 s). Most of the total difference is decoding: heyho's runs generated 99.8k tokens against Pi's 83.7k.
+- Pi sends earlier thinking back as `reasoning_content`; heyho drops it, so the server re-processes the previous assistant turn. Turns after the first processed a median 396 prompt tokens under heyho against 209 under Pi, about 0.3 s more per turn. No effect on pass rate is visible at this sample size.
+- On battery, decoding at the same context size was 12–17% slower than on AC and fell to 9 tok/s as the battery ran out, so the battery run's times are left out above.
 - With Qwen3.6, tasks 01, 03 and 05 pass almost every time under both harnesses, so only 02, 04 and 06 separate anything. At 18 runs per harness and a 70% pass rate, the standard error of the difference between two harnesses is about 15 points, so a difference needs to be about 30 points to stand out.
