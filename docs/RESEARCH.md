@@ -60,6 +60,8 @@ Not recommended here: Devstral Small 2 (dense, 10 GiB KV at 64k, 56.4 on a neutr
 | MLX / LM Studio | supported as plain OpenAI endpoints | faster on the hybrid Qwen models, but no structured output in `mlx_lm.server`, `max_tokens` defaults to 512, Qwen3.5 prompt-cache bug (#903) |
 | vLLM on a rented GPU | later | same client, `--tool-call-parser qwen3_coder` |
 
+Build 9140 can't load current Qwen3.6 GGUFs. They include the multi-token-prediction layer, which llama.cpp supports from b9180, and loading fails with `missing tensor 'blk.40.ssm_conv1d.weight'`. Qwen3.6 runs here on the official b11850 release; 9140 stays in place for the Qwen3-Coder baselines.
+
 ## 5. What to expect from local quality
 
 - On a neutral harness (mini-SWE-agent, SWE-bench Verified), the 24B class scores 56.4 against 71–77 for Claude Sonnet/Opus 4.5. Qwen3.6-35B-A3B's 64–70 comes from other people's harnesses, not a neutral one.
@@ -87,3 +89,24 @@ Not recommended here: Devstral Small 2 (dense, 10 GiB KV at 64k, 56.4 on a neutr
 - The 40-step limit stopped 3 heyho runs, all failing. The 4 Pi runs that went past 40 steps also failed.
 - A first Pi baseline loaded 105 skills from this machine, about 19k extra tokens per request, and ran much slower. Two of its runs on 05 ended when the model wrote a tool call as plain text. Without the skills that didn't happen. heyho has run such calls since cb59b6c; the recovery fired 0 times in the d00c370 runs.
 - On this model the pass rate is limited by the model, so three runs per task can't show the effect of harness changes. The next comparison is across models.
+
+## 7. Eval results: Qwen3.6-35B-A3B
+
+2026-11-06. The same six tasks, three runs each, through heyho 6500b41 (the same `src/` as d00c370). The `qwen3.6` profile: Q4_K_M, sampling from the model card, thinking on (the model's default), earlier thinking not sent back. llama-server b11850 with a 64k context. The Mac ran on battery throughout and went to sleep at 1% charge during the last run, which is invalid.
+
+| Task | Qwen3-Coder (both heyho evals) | Qwen3.6 |
+|---|---|---|
+| 01 date bug | 1/6 | 3/3 |
+| 02 cross-file bug | 3/6 | 0/3 |
+| 03 CLI option | 5/6 | 3/3 |
+| 04 validation feature | 0/6 | 2/3 |
+| 05 rename | 0/6 | 2/2 |
+| 06 extract helper | 5/6 | 3/3 |
+| **Total** | **14/36 (39%)** | **13/17 (76%)** |
+
+- Through the same harness, Qwen3.6 about doubles the pass rate. It passed 04 and 05, which Qwen3-Coder never did, and fixed 01 in 7–9 steps each time.
+- It took fewer steps (median 11 against 32) and generated about as many tokens, thinking included (median 4.4k). The median run took 161 s.
+- 02 failed all three runs the same way. The model changed `Math.round` to `Math.floor` in `allocate` and kept the loop that gives spare cents to the first shares. That passes the reported test but breaks the contract in the doc comment directly above the function: spare cents go to the largest fractional parts, and a zero weight gets zero. Each run stopped after 8–11 steps.
+- 04 run 2 missed spec rules 5, 7 and 8.
+- Cache reuse after the first turn was lower than with Qwen3-Coder (median 0.87 against 0.97). The cause hasn't been measured.
+- The step and time limits stopped no valid run.
