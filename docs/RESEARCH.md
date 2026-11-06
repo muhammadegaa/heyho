@@ -66,3 +66,24 @@ Not recommended here: Devstral Small 2 (dense, 10 GiB KV at 64k, 56.4 on a neutr
 - Vendor scores use BF16 weights, 200k+ context, temperature 1.0 and multi-hour timeouts. Here we run Q4, 32–64k, minutes per task. Qwen recommends ≥128k context to keep thinking quality. Expect our numbers to land below theirs.
 - Realistic target: scoped single-repo tasks (find, edit, run tests, iterate) succeed often; long multi-file refactors fail more. On Qwen3.6-35B-A3B a turn should take ~30–45 s, so a 20-step task takes 10–15 minutes.
 - The eval in the plan separates "the model can't" from "the harness didn't" by running the same tasks with a frontier model through the same harness.
+
+## 6. Eval results: Qwen3-Coder-30B-A3B
+
+2026-11-06. Tasks 1–6 (`eval/tasks/`), three runs each, Qwen3-Coder-30B-A3B Q4_K_M on llama-server b9140 with a 64k context and a 20-minute limit per run. heyho stops at 40 steps; Pi has no step limit. Pi ran without this machine's skills (`--no-skills`). No run overlapped a system sleep.
+
+| Task | heyho 9cb13b9 | heyho d00c370 | Pi |
+|---|---|---|---|
+| 01 date bug | 1/3 | 0/3 | 2/3 |
+| 02 cross-file bug | 2/3 | 1/3 | 1/3 |
+| 03 CLI option | 2/3 | 3/3 | 0/3 |
+| 04 validation feature | 0/3 | 0/3 | 0/3 |
+| 05 rename | 0/3 | 0/3 | 1/3 |
+| 06 extract helper | 3/3 | 2/3 | 3/3 |
+| **Total** | **8/18** | **6/18** | **7/18** |
+
+- The harnesses are level on pass rate. At this pass rate the standard deviation of an 18-run total is about 2. Pooled, heyho passes 14/36 and Pi 7/18 (39% each).
+- heyho d00c370 and Pi ran back to back on the same server: 71.6 against 117.2 minutes in total, median run 153 against 319 s. Step counts and the mix of tool calls were similar; Pi's runs generated about twice as many tokens (median 8.2k against 4.4k).
+- Every failure traced is a model mistake that also occurs under the other harness. 04 misses the same spec rules each time (0/12 across four eval sets, including the first Pi baseline). 05 also renames `parse_qty_range`, though the task says only one function changes. 01 applies the offset's sign to the hours only. 02 misallocates a fixed discount. 03 fails the rule that the `--since` cutoff comes from the newest entry of any level (all three Pi runs, one of six heyho runs).
+- The 40-step limit stopped 3 heyho runs, all failing. The 4 Pi runs that went past 40 steps also failed.
+- A first Pi baseline loaded 105 skills from this machine, about 19k extra tokens per request, and ran much slower. Two of its runs on 05 ended when the model wrote a tool call as plain text. Without the skills that didn't happen. heyho has run such calls since cb59b6c; the recovery fired 0 times in the d00c370 runs.
+- On this model the pass rate is limited by the model, so three runs per task can't show the effect of harness changes. The next comparison is across models.

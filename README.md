@@ -32,7 +32,7 @@ Built and measured on a MacBook Pro M1 Max with 64 GB, targeting Qwen3.6-35B-A3B
 ## Docs
 
 - [docs/PLAN.md](docs/PLAN.md): architecture, agent loop, tools, context strategy, eval design, milestones
-- [docs/RESEARCH.md](docs/RESEARCH.md): how Pi, OpenCode, Cline, Aider and mini-swe-agent work, which local models fit, and benchmarks measured on this machine
+- [docs/RESEARCH.md](docs/RESEARCH.md): how Pi, OpenCode, Cline, Aider and mini-swe-agent work, which local models fit, benchmarks measured on this machine, and eval results
 
 ## License
 
