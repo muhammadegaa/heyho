@@ -1,5 +1,5 @@
 export type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
-export type AssistantMessage = { role: "assistant"; content: string | null; tool_calls?: ToolCall[] };
+export type AssistantMessage = { role: "assistant"; content: string | null; reasoning_content?: string; tool_calls?: ToolCall[] };
 export type Message =
   | { role: "system" | "user"; content: string }
   | AssistantMessage
@@ -81,6 +81,7 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
     }
 
     let content = "";
+    let reasoning = "";
     let finish = "";
     const calls: ToolCall[] = [];
     const usage: Usage = { prompt: 0, cached: 0, completion: 0 };
@@ -111,6 +112,7 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
         if (ev.error) throw new Error(`server error: ${JSON.stringify(ev.error).slice(0, 500)}`);
         const choice = ev.choices?.[0];
         const d = choice?.delta;
+        if (d?.reasoning_content) reasoning += d.reasoning_content;
         if (d?.content) {
           content += d.content;
           opts.onText?.(d.content);
@@ -137,6 +139,9 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
     if (!finish && !content && calls.length === 0) throw new RetryableError("empty response stream");
 
     const message: AssistantMessage = { role: "assistant", content: content || null };
+    // Sent back on later requests: the chat template renders the thinking of every turn since
+    // the last user message, so without it the model sees its earlier tool calls with no reasoning.
+    if (reasoning) message.reasoning_content = reasoning;
     const toolCalls = calls.filter(Boolean);
     toolCalls.forEach((c, i) => (c.id ||= `call_${Date.now()}_${i}`));
     if (toolCalls.length) message.tool_calls = toolCalls;

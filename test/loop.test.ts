@@ -9,7 +9,7 @@ import { TOOLS } from "../src/tools/index.ts";
 import type { ToolContext } from "../src/tools/types.ts";
 
 // A fake OpenAI-compatible server that streams scripted replies and records requests.
-type Scripted = { text?: string; calls?: [string, string][]; finish?: string; drop?: boolean; status?: number };
+type Scripted = { reasoning?: string; text?: string; calls?: [string, string][]; finish?: string; drop?: boolean; status?: number };
 let script: Scripted[] = [];
 const requests: { messages: Message[]; tool_choice: string; tools: unknown }[] = [];
 let server: Server;
@@ -31,6 +31,7 @@ beforeAll(async () => {
         send({ choices: [{ index: 0, delta: { content: "partial" } }] });
         return setTimeout(() => res.destroy(), 20);
       }
+      for (const part of s.reasoning?.match(/.{1,5}/gs) ?? []) send({ choices: [{ index: 0, delta: { reasoning_content: part } }] });
       if (s.text) for (const part of s.text.match(/.{1,5}/gs) ?? []) send({ choices: [{ index: 0, delta: { content: part } }] });
       (s.calls ?? []).forEach(([name, args], i) => {
         send({ choices: [{ index: 0, delta: { tool_calls: [{ index: i, id: `c${i}`, type: "function", function: { name, arguments: "" } }] } }] });
@@ -77,6 +78,15 @@ test("each request extends the previous one unchanged (append-only prefix)", asy
   expect(messages.filter((m) => m.role === "tool").length).toBe(3);
   expect(stats.toolCalls).toEqual({ read: 1, edit: 1, bash: 1 });
   expect((messages.at(-2) as { content: string }).content).toContain("bye");
+});
+
+test("thinking is sent back with the turn it came from", async () => {
+  const { run } = setup();
+  script = [{ reasoning: "Read a.txt first.", calls: [["read", '{"path":"a.txt"}']] }, { text: "It says hello." }];
+  expect((await run()).status).toBe("done");
+  const replayed = requests[1].messages[2] as { content: string | null; reasoning_content?: string };
+  expect(replayed.reasoning_content).toBe("Read a.txt first.");
+  expect(replayed.content).toBeNull();
 });
 
 test("calls cut off by the output limit are not executed", async () => {
