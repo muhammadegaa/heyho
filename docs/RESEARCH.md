@@ -112,3 +112,17 @@ Build 9140 can't load current Qwen3.6 GGUFs. They include the multi-token-predic
 - Pi sends earlier thinking back as `reasoning_content`; heyho drops it, so the server re-processes the previous assistant turn. Turns after the first processed a median 396 prompt tokens under heyho against 209 under Pi, about 0.3 s more per turn. No effect on pass rate is visible at this sample size.
 - On battery, decoding at the same context size was 12–17% slower than on AC and fell to 9 tok/s as the battery ran out, so the battery run's times are left out above.
 - With Qwen3.6, tasks 01, 03 and 05 pass almost every time under both harnesses, so only 02, 04 and 06 separate anything. At 18 runs per harness and a 70% pass rate, the standard error of the difference between two harnesses is about 15 points, so a difference needs to be about 30 points to stand out.
+
+## 8. Eval results: tasks from a private repo
+
+2026-11-06 and 2026-11-07, Qwen3.6 with the same setup as section 7. Tasks 01–06 are small and synthetic, and three of them pass almost every time on this model. Two more tasks come from fix commits in a private TypeScript project. Each task is the code from before the fix plus a task statement written the way a user would report the problem. The tests the commit added are the hidden check. Verify builds the project and runs its whole vitest suite: 178 tests for one task, 1,854 for the other. The tasks live in the gitignored `eval/private/`, and the runner gives them only to local profiles. Each was checked by running verify three times on the code before the fix and three times after it.
+
+| Task | heyho | Pi |
+|---|---|---|
+| 07 feature, 74 files | 1/3 | 2/3 |
+| 08 bug fix, 530 files | 3/3 | 3/3 |
+
+- 08 passed every run under both harnesses, in 11–25 steps. Its larger repo caused no trouble.
+- 07 passed 3 of 6 runs. Every failure missed a requirement written in the task statement, and all three missed the same one.
+- heyho ran on AC and Pi on battery, which only slows Pi down. Even so, Pi's runs on 07 took 245–351 s against heyho's 563–865 s. On 07, heyho generated about twice the tokens: 19–23k per run against 7–11k. On 08, Pi generated more in two of three runs.
+- One explanation, not yet tested: heyho drops the model's earlier thinking (section 7), so the model may work through the same reasoning again on every turn. 07 is the task to test that on.
