@@ -127,9 +127,9 @@ export const edit: Tool = {
 
     const [s0, e0] = ranges[0];
     const diff = summarize(text.slice(s0, e0), replacement, lineOf(text, s0));
-    const no = await declined(ctx, "edit", `${shown}\n${diff}`);
-    if (no) return no;
     const final = crlf ? out.replace(/\n/g, "\r\n") : out;
+    const no = await declined(ctx, "edit", `${shown}\n${diff}`, { path: shown, before: raw, after: final });
+    if (no) return no;
     writeFileSync(abs, final);
     ctx.onChange?.(abs, raw, final);
     ctx.seen.set(abs, stamp(abs));

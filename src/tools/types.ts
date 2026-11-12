@@ -6,13 +6,16 @@ export type ToolContext = {
   stateDir: string; // ~/.heyho/projects/<hash>, readable by the read tool
   seen: Map<string, string>; // abs path → mtime:size when last read or written by the agent
   // true allows; false or a string declines, the string being what the user said instead.
-  approve: (kind: "edit" | "write" | "bash", summary: string) => Promise<boolean | string>;
+  approve: (kind: "edit" | "write" | "bash", summary: string, change?: Change) => Promise<boolean | string>;
   onChange?: (abs: string, before: string | null, after: string) => void; // a file was written
   onOutput?: (chunk: string) => void; // live output of a running command
   sandbox: { enabled: boolean; noNet: boolean };
   outCount: { n: number };
   signal?: AbortSignal;
 };
+
+// A file write about to happen or just done: `before` is null for a new file.
+export type Change = { path: string; before: string | null; after: string };
 
 export type ToolResult = { ok: boolean; text: string };
 
@@ -27,8 +30,8 @@ export const fail = (text: string): ToolResult => ({ ok: false, text });
 export const ok = (text: string): ToolResult => ({ ok: true, text });
 
 // Asks the user. Returns the result to hand back to the model when they decline.
-export async function declined(ctx: ToolContext, kind: "edit" | "write" | "bash", summary: string): Promise<ToolResult | null> {
-  const a = await ctx.approve(kind, summary);
+export async function declined(ctx: ToolContext, kind: "edit" | "write" | "bash", summary: string, change?: Change): Promise<ToolResult | null> {
+  const a = await ctx.approve(kind, summary, change);
   if (a === true) return null;
   if (typeof a === "string" && a.startsWith("Plan mode")) return fail(a);
   return fail(a ? `The user declined this action and said: ${a}` : "The user declined this action. Ask what they want instead, or try another approach.");

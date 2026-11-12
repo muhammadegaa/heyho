@@ -8,10 +8,13 @@ const ASK = `The conversation is about to be shortened to free context. Write th
 - what is left to do, in order
 Be specific and brief. Do not repeat file contents.`;
 
+export const NOTES_PREFIX = "Earlier messages in this session were removed to free context.";
+export const CARRY_ON = "Carry on with the task from where you stopped.";
+
 export async function compact(profile: Profile, messages: Message[], schemas: ToolSchema[], opts: ChatOpts = {}): Promise<Message[]> {
   // Same prefix and tool schemas as the session, so the server reuses its cache for this request.
   const reply = await chat(profile, [...messages, { role: "user", content: ASK }], schemas, { ...opts, toolChoice: "none" });
   const summary = reply.message.content?.trim();
   if (!summary) throw new Error("the model returned an empty summary");
-  return [messages[0], { role: "user", content: `Earlier messages in this session were removed to free context. Your notes from before:\n\n${summary}` }];
+  return [messages[0], { role: "user", content: `${NOTES_PREFIX} Your notes from before:\n\n${summary}` }];
 }

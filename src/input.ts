@@ -36,16 +36,19 @@ function walk(root: string): string[] {
 }
 
 // Completes "/command" at the start of a line and "@path" anywhere in it.
+// Tracked files when there is a git repo, otherwise every file under root.
+export function listFiles(root: string): string[] {
+  const git = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" });
+  return git.status === 0 ? git.stdout.split("\n").filter(Boolean) : walk(root);
+}
+
 export function completer(root: string, commands: string[]) {
   let files: string[] | null = null;
   return (line: string): [string[], string] => {
     if (/^\/\S*$/.test(line)) return [commands.map((c) => "/" + c).filter((c) => c.startsWith(line)), line];
     const at = line.match(/@(\S*)$/);
     if (!at) return [[], line];
-    if (!files) {
-      const git = spawnSync("git", ["ls-files"], { cwd: root, encoding: "utf8" });
-      files = git.status === 0 ? git.stdout.split("\n").filter(Boolean) : walk(root);
-    }
+    files ??= listFiles(root);
     const hits = files.filter((f) => f.startsWith(at[1]));
     const pool = hits.length ? hits : files.filter((f) => f.includes(at[1]));
     return [pool.slice(0, 40).map((f) => "@" + f), "@" + at[1]];

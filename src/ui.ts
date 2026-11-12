@@ -1,7 +1,9 @@
 // What the user sees. No dependencies: ANSI codes on stderr for everything except the
 // model's own text, which goes to stdout so `heyho "task" > file` captures only the answer.
 // Without a terminal on stderr the output is the plain line format the eval logs use.
+import { diffLines } from "./diff.ts";
 import type { AgentEvent, RunResult } from "./loop.ts";
+import type { Change } from "./tools/types.ts";
 
 const esc = (code: string) => (s: string) => `\x1b[${code}m${s}\x1b[0m`;
 const same = (s: string) => s;
@@ -47,6 +49,10 @@ export class Markdown {
   get pending() {
     return this.buf.length > 0;
   }
+  // The unfinished line as typed so far, for showing while it is still being written.
+  get raw() {
+    return this.buf;
+  }
   private line(l: string): string {
     const { dim, bold, cyan } = this.p;
     if (/^\s*```/.test(l)) {
@@ -63,55 +69,31 @@ export class Markdown {
   }
 }
 
-// Lines added and removed between two versions of a file, ignoring the unchanged start and end.
-export function lineDelta(before: string | null, after: string): [added: number, removed: number] {
-  const a = before === null ? [] : before.split("\n");
-  const b = after.split("\n");
-  let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  let end = 0;
-  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
-  return [b.length - start - end, a.length - start - end];
+const DIFF_MAX = 60;
+
+// A change as numbered, coloured lines: "  12 + added". Long diffs are cut with a count of what is left.
+export function renderDiff(change: Change, p: Paint, max = DIFF_MAX): { lines: string[]; added: number; removed: number } {
+  const d = diffLines(change.before, change.after);
+  const width = String(Math.max(1, ...d.hunks.flat().map((l) => l.newNo ?? l.oldNo ?? 0))).length;
+  const lines: string[] = [];
+  d.hunks.forEach((hunk, n) => {
+    if (n) lines.push(p.dim(" ".repeat(width) + " ⋮"));
+    for (const l of hunk) {
+      const row = `${String(l.kind === "-" ? l.oldNo : l.newNo).padStart(width)} ${l.kind} ${l.text}`;
+      lines.push(l.kind === "+" ? p.green(row) : l.kind === "-" ? p.red(row) : p.dim(row));
+    }
+  });
+  const cut = lines.length > max ? [...lines.slice(0, max), p.dim(`${" ".repeat(width)} … ${lines.length - max} more lines`)] : lines;
+  return { lines: cut, added: d.added, removed: d.removed };
 }
 
-const DIFF_MAX = 40;
-const CONTEXT = 2;
+export const changeTitle = (c: Change) => (c.before === null ? `Create ${c.path}` : `Edit ${c.path}`);
 
-// Colours the approval summary of an edit ("path\n@@ line N\n- old\n+ new") or a write
-// ("path (new file, N lines)\n<first lines>"). For an edit, lines that are the same at the
-// start and end of both sides are shown as context instead of as removed and added.
-export function renderChange(kind: "edit" | "write", summary: string, p: Paint): string {
-  const [head, ...rest] = summary.split("\n");
-  const out = [p.bold(head)];
-  if (kind === "write") {
-    const total = Number(head.match(/(\d+) lines\)$/)?.[1] ?? rest.length);
-    out.push(...rest.map((l) => p.green("+ " + l)));
-    if (total > rest.length) out.push(p.dim(`  … ${total - rest.length} more lines`));
-    return out.join("\n");
-  }
-  const minus: string[] = [];
-  const plus: string[] = [];
-  const notes: string[] = [];
-  for (const l of rest) {
-    if (l.startsWith("- ")) minus.push(l.slice(2));
-    else if (l.startsWith("+ ")) plus.push(l.slice(2));
-    else if (l.startsWith("@@")) out.push(p.cyan(l));
-    else notes.push(l);
-  }
-  let start = 0;
-  while (start < minus.length && start < plus.length && minus[start] === plus[start]) start++;
-  let end = 0;
-  while (end < minus.length - start && end < plus.length - start && minus[minus.length - 1 - end] === plus[plus.length - 1 - end]) end++;
-  const body = [
-    ...minus.slice(Math.max(0, start - CONTEXT), start).map((l) => p.dim("  " + l)),
-    ...minus.slice(start, minus.length - end).map((l) => p.red("- " + l)),
-    ...plus.slice(start, plus.length - end).map((l) => p.green("+ " + l)),
-    ...plus.slice(plus.length - end, plus.length - end + CONTEXT).map((l) => p.dim("  " + l)),
-  ];
-  out.push(...body.slice(0, DIFF_MAX));
-  if (body.length > DIFF_MAX) out.push(p.dim(`  … ${body.length - DIFF_MAX} more diff lines`));
-  out.push(...notes.map((l) => p.dim(l)));
-  return out.join("\n");
+// The lines of a command's output worth showing: all of a short one, otherwise the end.
+export function outputTail(text: string, max: number): { shown: string[]; hidden: number } {
+  const body = text.split("\n").filter((l) => l.trim());
+  const shown = body.slice(-max);
+  return { shown, hidden: body.length - shown.length };
 }
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -218,6 +200,12 @@ export class Renderer {
     };
   }
 
+  private lastChange: Change | null = null;
+  // A file was written; the tool line that follows shows its diff unless the approval already did.
+  changed(change: Change) {
+    this.lastChange = change;
+  }
+
   output(chunk: string) {
     if (!this.fancy || !this.status.current) return;
     const last = chunk.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").split("\n").map((l) => l.trim()).filter(Boolean).at(-1);
@@ -280,14 +268,15 @@ export class Renderer {
         const lines = e.result.text.split("\n");
         if (e.name === "bash" && e.result.ok) {
           const failed = !/^exit code 0$/.test(lines[0]);
-          const body = lines.slice(1).filter((l) => l.trim());
-          const shown = body.slice(-(failed ? 10 : 4));
+          const { shown, hidden } = outputTail(lines.slice(1).join("\n"), failed ? 15 : 8);
           process.stderr.write(`${failed ? yellow("!") : mark} ${this.p.bold("bash")} ${arg}  ${dim(`${lines[0]} · ${secs(took)}`)}\n`);
-          if (body.length > shown.length) process.stderr.write(dim(`  … ${body.length - shown.length} earlier lines\n`));
+          if (hidden) process.stderr.write(dim(`  … ${hidden} earlier lines\n`));
           for (const l of shown) process.stderr.write(dim("  " + oneLine(l, columns(process.stderr) - 4)) + "\n");
         } else if ((e.name === "edit" || e.name === "write") && e.result.ok) {
-          process.stderr.write(`${mark} ${this.p.bold(e.name)} ${lines[0].replace(/^(Edited|Created|Overwrote) /, "")}\n`);
-          if (!this.diffShown && e.name === "edit") process.stderr.write(indent(renderChange("edit", lines.join("\n"), this.p).split("\n").slice(1).join("\n")) + "\n");
+          const d = this.lastChange ? renderDiff(this.lastChange, this.p) : null;
+          process.stderr.write(`${mark} ${this.p.bold(e.name)} ${String(e.args.path ?? "")}${d ? `  ${green(`+${d.added}`)}${d.removed ? red(` −${d.removed}`) : ""}` : ""}\n`);
+          if (d && !this.diffShown) process.stderr.write(indent(d.lines.join("\n")) + "\n");
+          this.lastChange = null;
         } else {
           // read and search return content, so say how much came back instead of quoting it.
           const got = lines.length === 1 ? oneLine(lines[0], 100) : `${e.name === "read" ? lines.length - 1 : lines.length} lines`;

@@ -25,9 +25,9 @@ export const write: Tool = {
     }
     const lines = content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
     const preview = content.split("\n").slice(0, 20).join("\n");
-    const no = await declined(ctx, "write", `${shown} (${exists ? "overwrite" : "new file"}, ${lines} lines)\n${preview}`);
-    if (no) return no;
     const before = exists ? readFileSync(abs, "utf8") : null;
+    const no = await declined(ctx, "write", `${shown} (${exists ? "overwrite" : "new file"}, ${lines} lines)\n${preview}`, { path: shown, before, after: content });
+    if (no) return no;
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content);
     ctx.onChange?.(abs, before, content);

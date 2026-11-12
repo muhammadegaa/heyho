@@ -1,7 +1,8 @@
 // Tracks the files each user turn wrote, for the end-of-run summary and /undo.
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { relative } from "node:path";
-import { lineDelta, type FileChange } from "./ui.ts";
+import { diffLines } from "./diff.ts";
+import type { FileChange } from "./ui.ts";
 
 type Entry = { before: string | null; after: string };
 
@@ -23,9 +24,25 @@ export class Changes {
     turn.set(abs, { before: first ? first.before : before, after });
   };
 
+  get turnCount() {
+    return this.turns.length;
+  }
+
+  // Undoes every turn from the latest back to and including turn number `to` (0-based).
+  rewindTo(to: number): { restored: string[]; skipped: string[] } {
+    const restored = new Set<string>();
+    const skipped = new Set<string>();
+    while (this.turns.length > to) {
+      const r = this.undoTurn(this.turns.pop()!);
+      r.restored.forEach((f) => restored.add(f));
+      r.skipped.forEach((f) => skipped.add(f));
+    }
+    return { restored: [...restored], skipped: [...skipped] };
+  }
+
   summary(): FileChange[] {
     return [...(this.turns.at(-1) ?? [])].map(([abs, e]) => {
-      const [added, removed] = lineDelta(e.before, e.after);
+      const { added, removed } = diffLines(e.before, e.after);
       return { path: relative(this.root, abs), added, removed, created: e.before === null };
     });
   }
@@ -35,7 +52,10 @@ export class Changes {
   undo(): { restored: string[]; skipped: string[] } | null {
     while (this.turns.length && !this.turns.at(-1)!.size) this.turns.pop();
     const turn = this.turns.pop();
-    if (!turn) return null;
+    return turn ? this.undoTurn(turn) : null;
+  }
+
+  private undoTurn(turn: Map<string, Entry>): { restored: string[]; skipped: string[] } {
     const restored: string[] = [];
     const skipped: string[] = [];
     for (const [abs, e] of turn) {

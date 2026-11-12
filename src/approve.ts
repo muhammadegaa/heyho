@@ -20,8 +20,12 @@ export type Kind = "edit" | "write" | "bash";
 export const isSimple = (command: string) => !/[;&|`$<>\n\\]/.test(command);
 
 // Read-only commands allowed without asking, as long as no argument points outside the workspace.
-const SAFE = ["ls", "pwd", "wc", "cat", "head", "tail", "grep", "rg", "git status", "git diff", "git log", "git show"];
-const staysInside = (command: string) => !command.split(/\s+/).slice(1).some((a) => a.startsWith("/") || a.startsWith("~") || a.split("/").includes(".."));
+const SAFE = ["ls", "pwd", "wc", "cat", "head", "tail", "grep", "rg", "find", "git status", "git diff", "git log", "git show"];
+// `root` itself may be named in full: models often pass absolute paths.
+const staysInside = (command: string, root: string) =>
+  !command.split(/\s+/).slice(1).some((a) => (a.startsWith("/") && a !== root && !a.startsWith(root + "/")) || a.startsWith("~") || a.split("/").includes(".."));
+// find can delete and run programs; those forms are not read-only.
+const findWrites = (command: string) => /^find\b/.test(command) && /\s-(delete|exec|execdir|ok|okdir|fprint\w*|fls)\b/.test(command);
 
 const startsWith = (command: string, prefix: string) => command === prefix || command.startsWith(prefix + " ");
 
@@ -39,10 +43,12 @@ export class Approvals {
   private exact = new Set<string>();
   private prefixes = new Set<string>();
   private file?: string;
+  private root: string;
   // Command rules are kept per project in `file`; "always allow edits" lasts for the session only.
-  constructor(mode: Mode, file?: string) {
+  constructor(mode: Mode, file?: string, root = "") {
     this.mode = mode;
     this.file = file;
+    this.root = root;
     if (file && existsSync(file)) {
       const saved = JSON.parse(readFileSync(file, "utf8"));
       this.exact = new Set(saved.exact ?? []);
@@ -62,7 +68,7 @@ export class Approvals {
   allowed(kind: Kind, summary: string): boolean {
     if (this.mode === "yolo") return true;
     const c = summary.trim();
-    const readOnly = kind === "bash" && isSimple(c) && staysInside(c) && SAFE.some((p) => startsWith(c, p));
+    const readOnly = kind === "bash" && isSimple(c) && staysInside(c, this.root) && !findWrites(c) && SAFE.some((p) => startsWith(c, p));
     if (this.mode === "plan") return readOnly;
     if (kind !== "bash") return this.mode === "auto" || this.kinds.has(kind);
     if (readOnly || this.exact.has(c)) return true;

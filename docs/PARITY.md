@@ -11,6 +11,29 @@ Status words: **same** (no difference a user would notice), **partial** (heyho d
 
 Not covered: Claude Code's IDE, desktop, web and cloud features, and anything that depends on a hosted service.
 
+## Since this comparison
+
+The Ink screen (branch `ui`, after d2aab3c) changed the rows below. Each was checked in tmux, on the scripted server and on Qwen3.6. The tables that follow still describe the run before it.
+
+| Row | Now |
+|---|---|
+| Layout | A fixed input box with the transcript scrolling above it, and a footer with mode, model and context use |
+| Model text | Word-wrapped with a hanging indent; the line being written is shown as it grows |
+| Approvals | A panel with a line-numbered diff and a numbered menu; one key answers; Tab or option 3 types what to do instead |
+| Diffs | A real line diff with three lines of context; unchanged lines in the middle stay context |
+| Command output | Collapsed to a count when the command passes; Ctrl+O prints the last command's full output; a failed command shows its last 15 lines |
+| Plan mode | Ends in "Carry out this plan?" with choices that switch mode and start the work; read-only `find` is allowed |
+| Rewind | `/rewind` or Esc Esc lists earlier messages and restores files, conversation or both; the message returns to the input box. Checkpoints are still in memory only |
+| `/` and `@` | Live menus that filter as you type |
+| Queued messages | Shown above the input box until sent |
+| `/resume` | A picker; sessions are listed under what the user first typed, also after `/compact` |
+| `/context` | A bar, message and model-call counts, and tool-call counts |
+| New: `/diff` | Shows `git diff` |
+| History | Kept per project |
+| Defects 1–9 | Fixed, except 8 in part: `--continue` now skips headless runs |
+
+Still open from section 13: checkpoints on disk, session names, deny rules and a settings file, the tools in group E, instruction files beyond the root, and everything in group G. Also not done in the new screen: Ctrl+R history search, editing the prompt in `$EDITOR`, vim keys, tables in markdown, and syntax highlighting.
+
 ## 1. What was run, step by step
 
 | # | Step sent to both | Claude Code | heyho | Status |

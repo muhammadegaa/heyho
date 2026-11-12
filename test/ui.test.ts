@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Approvals, prefixOf } from "../src/approve.ts";
 import { Changes } from "../src/changes.ts";
 import { listSessions, loadMessages, newSession } from "../src/session.ts";
-import { lineDelta, Markdown, paint, renderChange } from "../src/ui.ts";
+import { Markdown, outputTail, paint, renderDiff } from "../src/ui.ts";
 
 const plain = paint(false);
 
@@ -18,18 +18,18 @@ test("markdown is rendered a whole line at a time", () => {
   expect(md.pending).toBe(false);
 });
 
-test("an edit's diff shows unchanged first and last lines as context", () => {
-  const out = renderChange("edit", "a.ts\n@@ line 4\n- keep\n- old\n- end\n+ keep\n+ new\n+ end", plain);
-  expect(out.split("\n")).toEqual(["a.ts", "@@ line 4", "  keep", "- old", "+ new", "  end"]);
+test("a diff is shown with line numbers, and a long one is cut with a count", () => {
+  const d = renderDiff({ path: "a.ts", before: "one\ntwo\nthree\n", after: "one\n2\nthree\n" }, plain);
+  expect(d.lines).toEqual(["1   one", "2 - two", "2 + 2", "3   three"]);
+  expect([d.added, d.removed]).toEqual([1, 1]);
+  const long = renderDiff({ path: "b.ts", before: null, after: Array.from({ length: 30 }, (_, i) => `l${i}`).join("\n") + "\n" }, plain, 5);
+  expect(long.lines.length).toBe(6);
+  expect(long.lines[5]).toBe("   … 25 more lines");
 });
 
-test("a new file's preview says how many lines are not shown", () => {
-  expect(renderChange("write", "b.ts (new file, 5 lines)\none\ntwo", plain)).toBe("b.ts (new file, 5 lines)\n+ one\n+ two\n  … 3 more lines");
-});
-
-test("line counts ignore the unchanged start and end of a file", () => {
-  expect(lineDelta("a\nb\nc\n", "a\nx\ny\nc\n")).toEqual([2, 1]);
-  expect(lineDelta(null, "a\nb")).toEqual([2, 0]);
+test("a command's output is shown from the end, counting what is hidden", () => {
+  expect(outputTail("a\n\nb\nc\n", 2)).toEqual({ shown: ["b", "c"], hidden: 1 });
+  expect(outputTail("", 4)).toEqual({ shown: [], hidden: 0 });
 });
 
 test("ask mode asks for edits and commands; read-only commands inside the workspace don't ask", () => {
@@ -41,6 +41,12 @@ test("ask mode asks for edits and commands; read-only commands inside the worksp
   expect(a.allowed("bash", "cat ../other/secret")).toBe(false);
   expect(a.allowed("bash", "git status; rm -rf .")).toBe(false);
   expect(a.allowed("bash", "npm test")).toBe(false);
+  expect(a.allowed("bash", "find . -name '*.js'")).toBe(true);
+  expect(a.allowed("bash", "find . -name '*.js' -delete")).toBe(false);
+  const rooted = new Approvals("ask", undefined, "/work/repo");
+  expect(rooted.allowed("bash", "find /work/repo/src -type f")).toBe(true);
+  expect(rooted.allowed("bash", "cat /work/repository/secret")).toBe(false);
+  expect(rooted.allowed("bash", "cat /etc/passwd")).toBe(false);
 });
 
 test("a prefix rule covers the command with other arguments but never a chained command", () => {
@@ -99,11 +105,12 @@ test("undo restores the last turn's files and leaves files changed since alone",
   writeFileSync(a, "three\n");
   expect(changes.summary()).toEqual([
     { path: "a.txt", added: 1, removed: 1, created: false },
-    { path: "b.txt", added: 2, removed: 0, created: true },
+    { path: "b.txt", added: 1, removed: 0, created: true },
     { path: "c.txt", added: 1, removed: 1, created: false },
   ]);
   writeFileSync(c, "edited by the user\n");
   changes.startTurn(); // a later turn with no changes
+  expect(changes.turnCount).toBe(2);
   expect(changes.undo()).toEqual({ restored: ["a.txt", "b.txt"], skipped: ["c.txt"] });
   expect(readFileSync(a, "utf8")).toBe("one\n");
   expect(existsSync(b)).toBe(false);
@@ -127,5 +134,14 @@ test("a session reloads its messages, starting after the last reset", async () =
   expect(listSessions(dir).map((x) => [x.first, x.turns])).toEqual([["first task", 1]]);
   s.record({ reset: true });
   s.record({ role: "system", content: "sys" });
-  expect(loadMessages(s.file)).toEqual([{ role: "system", content: "sys" }]);
+  s.record({ role: "user", content: "Earlier messages in this session were removed to free context. Your notes from before:\n\nx" });
+  expect(loadMessages(s.file).length).toBe(2);
+  // Still listed under what the user first typed, not under the notes heyho wrote.
+  expect(listSessions(dir).map((x) => [x.first, x.turns])).toEqual([["first task", 1]]);
+
+  const once = newSession(dir);
+  once.record({ meta: { headless: true } });
+  once.record({ role: "user", content: "one-off question" });
+  expect(listSessions(dir).map((x) => x.first)).toEqual(["first task"]);
+  expect(listSessions(dir, 10, { headless: true }).map((x) => x.first)).toContain("one-off question");
 });

@@ -1,6 +1,6 @@
 // Shows the terminal UI without a model: a fake server streams scripted replies, with
 // pauses, into a throwaway project. Run `bun scripts/ui-demo.ts` and type anything.
-// Three messages walk through: thinking, an edit with a diff, a command, a new file,
+// Add --plain for the line mode. Three messages walk through: thinking, an edit with a diff, a command, a new file,
 // a failing command, and a reply in markdown. Extra arguments go to heyho (e.g. --mode auto).
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
