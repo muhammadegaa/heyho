@@ -25,10 +25,11 @@ export function systemPrompt(root: string, now = new Date()): string {
   const branch = spawnSync("git", ["branch", "--show-current"], { cwd: root, encoding: "utf8" }).stdout?.trim();
   const env = `Working directory: ${root}\nOS: ${process.platform} ${release()}\nDate: ${now.toISOString().slice(0, 10)}${branch ? `\nGit branch: ${branch}` : ""}`;
   let agents = "";
-  const file = join(root, "AGENTS.md");
-  if (existsSync(file)) {
-    const text = readFileSync(file, "utf8");
-    agents = `\n\nProject instructions (AGENTS.md):\n${text.slice(0, AGENTS_MD_MAX_CHARS)}${text.length > AGENTS_MD_MAX_CHARS ? "\n[AGENTS.md truncated]" : ""}`;
+  // CLAUDE.md is read when there is no AGENTS.md, since many repos already have one.
+  const name = ["AGENTS.md", "CLAUDE.md"].find((n) => existsSync(join(root, n)));
+  if (name) {
+    const text = readFileSync(join(root, name), "utf8");
+    agents = `\n\nProject instructions (${name}):\n${text.slice(0, AGENTS_MD_MAX_CHARS)}${text.length > AGENTS_MD_MAX_CHARS ? `\n[${name} truncated]` : ""}`;
   }
   return `${BASE}\n\n${env}${agents}`;
 }

@@ -1,34 +1,58 @@
 // The prompt: one readline for user messages and approval answers, with history kept
 // between sessions, pasted multi-line text joined into one message, and @path completion.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 
 const PASTE_GAP_MS = 30; // lines closer together than this were pasted, not typed
 const HISTORY = 500;
 
 export type Input = {
-  message: (prompt: string) => Promise<string | null>; // null at end of input
+  message: (prompt: () => string) => Promise<string | null>; // null at end of input
+  onKey: (fn: (key: { name?: string; shift?: boolean }) => void) => void;
+  redraw: () => void; // the prompt text changed while waiting
   answer: (prompt: string) => Promise<string>;
   onInterrupt: (fn: () => void) => void;
   close: () => void;
 };
 
-// `git ls-files` when there is a repo; completion is simply off otherwise.
-export function fileCompleter(root: string) {
+const SKIP = new Set(["node_modules", ".git", "dist", "build", ".next", "target", ".venv"]);
+const WALK_MAX = 5000;
+
+// Without a git repo: every file under root, skipping dependency and build folders.
+function walk(root: string): string[] {
+  const out: string[] = [];
+  const visit = (dir: string) => {
+    for (const e of readdirSync(join(root, dir), { withFileTypes: true })) {
+      if (out.length >= WALK_MAX || SKIP.has(e.name)) continue;
+      const path = dir ? `${dir}/${e.name}` : e.name;
+      if (e.isDirectory()) visit(path);
+      else out.push(path);
+    }
+  };
+  visit("");
+  return out;
+}
+
+// Completes "/command" at the start of a line and "@path" anywhere in it.
+export function completer(root: string, commands: string[]) {
   let files: string[] | null = null;
   return (line: string): [string[], string] => {
+    if (/^\/\S*$/.test(line)) return [commands.map((c) => "/" + c).filter((c) => c.startsWith(line)), line];
     const at = line.match(/@(\S*)$/);
     if (!at) return [[], line];
-    files ??= (spawnSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).stdout ?? "").split("\n").filter(Boolean);
+    if (!files) {
+      const git = spawnSync("git", ["ls-files"], { cwd: root, encoding: "utf8" });
+      files = git.status === 0 ? git.stdout.split("\n").filter(Boolean) : walk(root);
+    }
     const hits = files.filter((f) => f.startsWith(at[1]));
     const pool = hits.length ? hits : files.filter((f) => f.includes(at[1]));
     return [pool.slice(0, 40).map((f) => "@" + f), "@" + at[1]];
   };
 }
 
-export function createInput(opts: { historyFile: string; root: string }): Input {
+export function createInput(opts: { historyFile: string; root: string; commands: string[] }): Input {
   const tty = Boolean(process.stdin.isTTY);
   const history = existsSync(opts.historyFile) ? readFileSync(opts.historyFile, "utf8").split("\n").filter(Boolean).reverse() : [];
   const rl: Interface = createInterface({
@@ -37,7 +61,7 @@ export function createInput(opts: { historyFile: string; root: string }): Input 
     terminal: tty,
     history,
     historySize: HISTORY,
-    completer: fileCompleter(opts.root),
+    completer: completer(opts.root, opts.commands),
   });
   rl.on("history", (h: string[]) => {
     mkdirSync(dirname(opts.historyFile), { recursive: true });
@@ -60,7 +84,9 @@ export function createInput(opts: { historyFile: string; root: string }): Input 
   });
 
   let fromQueue = false;
+  let promptText: () => string = () => "";
   const nextLine = (prompt: string, useQueue: boolean): Promise<string | null> => {
+    promptText = () => prompt;
     fromQueue = useQueue && queue.length > 0;
     if (fromQueue) return Promise.resolve(queue.shift()!);
     if (closed) return Promise.resolve(null);
@@ -84,7 +110,9 @@ export function createInput(opts: { historyFile: string; root: string }): Input 
 
   return {
     async message(prompt) {
-      const first = await nextLine(prompt, true);
+      const pending = nextLine(prompt(), true);
+      promptText = prompt;
+      const first = await pending;
       if (first === null) return null;
       const lines = [first];
       // Lines typed ahead while the agent worked are separate messages, not one paste.
@@ -100,7 +128,19 @@ export function createInput(opts: { historyFile: string; root: string }): Input 
     },
     // Never served from typed-ahead lines: an approval must be answered after it is shown.
     async answer(prompt) {
-      return (await nextLine(prompt, false)) ?? "";
+      const a = (await nextLine(prompt, false)) ?? "";
+      // Not something to offer again when the user presses Up.
+      const history = (rl as unknown as { history: string[] }).history;
+      if (history[0] === a) history.shift();
+      return a;
+    },
+    onKey(fn) {
+      process.stdin.on("keypress", (_s, key) => key && fn(key));
+    },
+    redraw() {
+      if (!waiter) return;
+      rl.setPrompt(promptText());
+      rl.prompt(true);
     },
     onInterrupt(fn) {
       rl.on("SIGINT", fn);

@@ -291,7 +291,7 @@ export class Renderer {
         } else {
           // read and search return content, so say how much came back instead of quoting it.
           const got = lines.length === 1 ? oneLine(lines[0], 100) : `${e.name === "read" ? lines.length - 1 : lines.length} lines`;
-          process.stderr.write(`${mark} ${this.p.bold(e.name)} ${arg}  ${e.result.ok ? dim(got) : red(oneLine(lines[0], 160))}\n`);
+          process.stderr.write(`${mark} ${this.p.bold(e.name)} ${arg}  ${e.result.ok ? dim(got) : lines[0].startsWith("Plan mode") ? yellow("not run: plan mode") : red(oneLine(lines[0], 160))}\n`);
         }
         break;
       }

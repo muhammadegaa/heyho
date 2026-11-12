@@ -63,6 +63,29 @@ test("auto mode stops asking for edits but still asks for commands", () => {
   expect(a.allowed("bash", "npm test")).toBe(false);
 });
 
+test("plan mode lets read-only commands run and nothing else", () => {
+  const a = new Approvals("plan");
+  a.allowPrefix("npm test");
+  expect(a.allowed("bash", "git diff")).toBe(true);
+  expect(a.allowed("bash", "npm test")).toBe(false);
+  expect(a.allowed("edit", "x")).toBe(false);
+  expect(a.allowed("write", "x")).toBe(false);
+});
+
+test("command rules are kept for the project; allowing all edits is not", () => {
+  const file = join(mkdtempSync(join(tmpdir(), "heyho-state-")), "allowed.json");
+  const a = new Approvals("ask", file);
+  a.allowPrefix("npm test");
+  a.allowExact("make && make install");
+  a.allowKind("edit");
+  const b = new Approvals("ask", file);
+  expect(b.allowed("bash", "npm test -- x")).toBe(true);
+  expect(b.allowed("bash", "make && make install")).toBe(true);
+  expect(b.allowed("edit", "x")).toBe(false);
+  b.forget();
+  expect(new Approvals("ask", file).allowed("bash", "npm test")).toBe(false);
+});
+
 test("undo restores the last turn's files and leaves files changed since alone", () => {
   const root = mkdtempSync(join(tmpdir(), "heyho-test-"));
   const [a, b, c] = ["a.txt", "b.txt", "c.txt"].map((f) => join(root, f));

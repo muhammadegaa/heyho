@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
-import { Approvals, prefixOf, type Mode } from "./approve.ts";
+import { Approvals, MODE_HELP, MODES, PLAN_REFUSAL, prefixOf, type Mode } from "./approve.ts";
 import { Changes } from "./changes.ts";
 import { compact } from "./compact.ts";
 import { createInput, type Input } from "./input.ts";
@@ -17,6 +18,8 @@ import { TOOLS, toolSchemas } from "./tools/index.ts";
 import type { ToolContext } from "./tools/types.ts";
 import { Renderer, renderChange } from "./ui.ts";
 
+const VERSION = JSON.parse(readFileSync(join(dirname(import.meta.filename), "..", "package.json"), "utf8")).version;
+
 const HELP = `heyho — coding agent for local models
 
   heyho                 interactive session in the current directory
@@ -26,14 +29,16 @@ Options
   --profile <name>      model profile (default qwen3-coder; env HEYHO_PROFILE)
   --base-url <url>      override the profile's OpenAI-compatible endpoint
   --model <name>        override the profile's model name
-  --mode <ask|auto>     ask before every edit and command (default), or only before commands
+  --mode <ask|auto|plan>  ask before every edit and command (default), only before commands,
+                        or change nothing and propose a plan
   --continue            carry on from the last session in this directory
   --yolo                with a task: no approval prompts; bash runs in the macOS sandbox
   --no-net              with --yolo, the sandbox also blocks network access
   --max-steps <n>       step limit (default 40)
   --json                with a task: print the result as JSON on stdout
   --report <file>       write a JSON run report (used by the eval runner)
-  --cwd <dir>           working directory`;
+  --cwd <dir>           working directory
+  --version             show version and exit`;
 
 const COMMANDS = `  /help             this list
   /context          tokens in use, steps and the session file
@@ -41,13 +46,20 @@ const COMMANDS = `  /help             this list
   /clear            start a new conversation (the old one stays on disk)
   /resume [n]       list earlier sessions here, or reopen number n
   /undo             take back the file changes of the last turn that made any
-  /mode [ask|auto]  show or set whether edits ask first
-  /allowed          what currently runs without asking
+  /mode [name]      show or set the mode: ask, auto, plan, yolo (Shift+Tab cycles the first three)
+  /allowed [reset]  what runs without asking; reset forgets the saved rules
+  /init             have the model write AGENTS.md, the project notes it reads at every start
   /model [profile]  show or switch the model profile
   /exit             quit
 
   End a line with \\ to continue on the next one. Pasted text stays one message.
-  @ then Tab completes a file path. Ctrl-C stops a running task.`;
+  @ then Tab completes a file path, / then Tab a command. !command runs it yourself and
+  shows the model the output. Esc or Ctrl-C stops a running task.`;
+
+const COMMAND_NAMES = ["help", "context", "compact", "clear", "resume", "undo", "mode", "allowed", "init", "model", "exit"];
+const INIT_TASK = `Write AGENTS.md at the root of this project: the notes you would want at the start of every session here. Look at the code first. Cover what the project is, how it is laid out, the commands to build, test and lint, and conventions the code follows. Keep it under 60 lines and state only what you verified.`;
+const PLAN_ON = "[Plan mode is on. Investigate with read, search and read-only commands, then reply with a plan and stop. Do not change anything.]\n\n";
+const PLAN_OFF = "[Plan mode is off. You may now make changes.]\n\n";
 
 const BELL_AFTER_MS = 20_000;
 const SERVER_HELP = (url: string) =>
@@ -69,10 +81,12 @@ async function main() {
       report: { type: "string" },
       cwd: { type: "string" },
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "V" },
     },
   });
   if (opt.help) return console.log(`${HELP}\n\nIn a session\n${COMMANDS}`);
-  if (opt.mode !== "ask" && opt.mode !== "auto") throw new Error(`--mode is "ask" or "auto", not "${opt.mode}".`);
+  if (opt.version) return console.log(VERSION);
+  if (!["ask", "auto", "plan"].includes(opt.mode!)) throw new Error(`--mode is "ask", "auto" or "plan", not "${opt.mode}".`);
 
   const root = realpathSync(opt.cwd ?? process.cwd());
   const stateDir = join(homedir(), ".heyho", "projects", createHash("sha256").update(root).digest("hex").slice(0, 16));
@@ -99,12 +113,12 @@ async function main() {
   };
   await connect();
 
-  const approvals = new Approvals(opt.yolo ? "yolo" : (opt.mode as Mode));
+  const approvals = new Approvals(opt.yolo ? "yolo" : (opt.mode as Mode), join(stateDir, "allowed.json"));
   const changes = new Changes(root);
   const stats = newStats();
   const maxSteps = Number(opt["max-steps"]) || 40;
   let input: Input | undefined;
-  const prompt = () => (input ??= createInput({ historyFile: join(homedir(), ".heyho", "history"), root }));
+  const prompt = () => (input ??= createInput({ historyFile: join(homedir(), ".heyho", "history"), root, commands: COMMAND_NAMES }));
   let runStart = 0;
 
   const ctx: ToolContext = {
@@ -117,6 +131,7 @@ async function main() {
     onOutput: (chunk) => ui.output(chunk),
     approve: async (kind, summary) => {
       if (approvals.allowed(kind, summary)) return true;
+      if (approvals.mode === "plan") return PLAN_REFUSAL;
       if (!process.stdin.isTTY) return false;
       const resume = ui.pause();
       if (Date.now() - runStart > BELL_AFTER_MS) process.stderr.write("\x07");
@@ -156,6 +171,11 @@ async function main() {
 
   let current: AbortController | null = null;
   let note = ""; // told to the model at the start of the next user message
+  let toldPlan = false;
+  const setMode = (mode: Mode) => {
+    approvals.mode = mode;
+    ctx.sandbox.enabled = mode === "yolo";
+  };
 
   const shorten = async (signal?: AbortSignal) => {
     ui.onEvent({ type: "request", step: 0 });
@@ -167,7 +187,9 @@ async function main() {
 
   const run = async (text: string): Promise<RunResult | { status: "error"; reason: string }> => {
     const withPaths = text.replace(/(^|\s)@(\S+)/g, (all, lead, p) => (existsSync(join(root, p)) ? lead + p : all));
-    const m: Message = { role: "user", content: note + withPaths };
+    const plan = approvals.mode === "plan";
+    const m: Message = { role: "user", content: (plan && !toldPlan ? PLAN_ON : !plan && toldPlan ? PLAN_OFF : "") + note + withPaths };
+    toldPlan = plan;
     note = "";
     messages.push(m);
     session.record(m);
@@ -225,6 +247,15 @@ async function main() {
     prompt().close();
     process.exit(0);
   });
+  prompt().onKey((key) => {
+    if (key.name === "escape") return current?.abort();
+    if (key.name !== "tab" || !key.shift) return;
+    const cycle: Mode[] = MODES.filter((m) => m !== "yolo");
+    setMode(cycle[(cycle.indexOf(approvals.mode) + 1) % cycle.length]);
+    if (current) ui.note(dim(`mode: ${approvals.mode} (${MODE_HELP[approvals.mode]})`));
+    else prompt().redraw();
+  });
+  const promptText = () => `\n${approvals.mode === "ask" ? "" : dim(`${approvals.mode} `)}${bold("›")} `;
 
   const commands: Record<string, (arg: string) => Promise<void> | void> = {
     help: () => console.error(COMMANDS),
@@ -272,11 +303,15 @@ async function main() {
       console.error(dim("Commands the agent ran are not undone."));
     },
     mode: (arg) => {
-      if (arg === "ask" || arg === "auto") approvals.mode = arg;
-      else if (arg) return console.error(`Modes are "ask" and "auto".`);
+      if (MODES.includes(arg as Mode)) setMode(arg as Mode);
+      else if (arg) return console.error(`Modes: ${MODES.map((m) => `${m} (${MODE_HELP[m]})`).join("; ")}.`);
       console.error(approvals.describe()[0]);
     },
-    allowed: () => console.error(approvals.describe().join("\n")),
+    allowed: (arg) => {
+      if (arg === "reset") approvals.forget();
+      console.error(approvals.describe().join("\n"));
+    },
+    init: async () => void (await run(INIT_TASK)),
     model: async (arg) => {
       if (arg) {
         const before = profile;
@@ -293,7 +328,7 @@ async function main() {
   };
 
   for (;;) {
-    const line = await prompt().message(`\n${bold("›")} `);
+    const line = await prompt().message(promptText);
     if (line === null) break;
     if (!line) continue;
     if (line.startsWith("/") && !line.includes("\n")) {
@@ -302,6 +337,14 @@ async function main() {
       const command = commands[name];
       if (command) await command(rest.join(" "));
       else console.error(`Unknown command /${name}. /help lists them.`);
+      continue;
+    }
+    if (line.startsWith("!") && !line.includes("\n")) {
+      // The user's own command: run as typed, shown as it happens, and told to the model next turn.
+      const r = spawnSync("/bin/bash", ["-c", line.slice(1)], { cwd: root, encoding: "utf8", stdio: ["inherit", "pipe", "pipe"] });
+      const out = (r.stdout ?? "") + (r.stderr ?? "");
+      process.stderr.write(out + dim(`exit code ${r.status}\n`));
+      note += `[The user ran \`${line.slice(1).trim()}\` (exit code ${r.status}):\n${out.slice(-4000)}]\n\n`;
       continue;
     }
     await run(line);

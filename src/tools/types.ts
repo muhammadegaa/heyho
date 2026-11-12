@@ -30,6 +30,7 @@ export const ok = (text: string): ToolResult => ({ ok: true, text });
 export async function declined(ctx: ToolContext, kind: "edit" | "write" | "bash", summary: string): Promise<ToolResult | null> {
   const a = await ctx.approve(kind, summary);
   if (a === true) return null;
+  if (typeof a === "string" && a.startsWith("Plan mode")) return fail(a);
   return fail(a ? `The user declined this action and said: ${a}` : "The user declined this action. Ask what they want instead, or try another approach.");
 }
 
