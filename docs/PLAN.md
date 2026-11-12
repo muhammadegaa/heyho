@@ -172,6 +172,6 @@ Smoke = 3 tasks × 1 run (~15–20 min); full = 8 tasks × 3 runs (overnight).
 8. Safety: `ask` by default; Seatbelt sandbox for bash in `auto` and `yolo`; network on, `--no-net` to turn it off.
 9. State: `~/.heyho/projects/<hash>/`.
 10. Eval built in M1. Baseline A: Pi. Baseline B: OpenRouter, Sonnet 5.5 and hosted Qwen3.6, tasks 1–6 only; needs `OPENROUTER_API_KEY` in the shell profile before M2. Tasks 7–8 mined from private repos, run locally only.
-11. M1 includes an interactive line mode; the TUI waits for M3.
+11. M1 includes an interactive line mode; the TUI waits for M3. Changed 2026-11-12: the interactive screen (status line, diffs, approval rules, `/undo`, sessions, compaction) was built before the rest of M2, in plain ANSI output with no TUI library, because the agent could not be judged or shown through the line mode. `/undo` restores the files the agent wrote from copies kept in memory, not from git checkpoints.
 12. Repo: `github.com/muhammadegaa/heyho`, public, MIT. Commits use the GitHub noreply address.
 13. heyho is the one active bet until the M2 publish.

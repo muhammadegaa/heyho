@@ -18,7 +18,14 @@ export type Profile = {
 export type Usage = { prompt: number; cached: number; completion: number; prefillMs?: number; genTps?: number };
 export type Reply = { message: AssistantMessage; finish: string; usage: Usage };
 
-type ChatOpts = { toolChoice?: "auto" | "none"; onText?: (text: string) => void; signal?: AbortSignal };
+export type ChatOpts = {
+  toolChoice?: "auto" | "none";
+  onText?: (text: string) => void;
+  onReasoning?: (text: string) => void;
+  onCall?: (name: string, argChars: number) => void; // a tool call is being written
+  onRetry?: (reason: string) => void;
+  signal?: AbortSignal;
+};
 
 const FIRST_BYTE_MS = 600_000;
 const IDLE_MS = 120_000;
@@ -40,6 +47,7 @@ export async function chat(p: Profile, messages: Message[], tools: ToolSchema[],
       return await request(p, body, opts);
     } catch (e) {
       if (opts.signal?.aborted || !(e instanceof RetryableError) || attempt >= RETRIES) throw e;
+      opts.onRetry?.(e.message);
       await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
     }
   }
@@ -112,7 +120,10 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
         if (ev.error) throw new Error(`server error: ${JSON.stringify(ev.error).slice(0, 500)}`);
         const choice = ev.choices?.[0];
         const d = choice?.delta;
-        if (d?.reasoning_content) reasoning += d.reasoning_content;
+        if (d?.reasoning_content) {
+          reasoning += d.reasoning_content;
+          opts.onReasoning?.(d.reasoning_content);
+        }
         if (d?.content) {
           content += d.content;
           opts.onText?.(d.content);
@@ -122,6 +133,7 @@ async function request(p: Profile, body: string, opts: ChatOpts): Promise<Reply>
           if (tc.id) c.id = tc.id;
           if (tc.function?.name) c.function.name += tc.function.name;
           if (tc.function?.arguments) c.function.arguments += tc.function.arguments;
+          opts.onCall?.(c.function.name, c.function.arguments.length);
         }
         if (choice?.finish_reason) finish = choice.finish_reason;
         if (ev.usage) {

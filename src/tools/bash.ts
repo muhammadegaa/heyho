@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { DENIED, fail, ok, type Tool, type ToolContext } from "./types.ts";
+import { declined, fail, ok, type Tool, type ToolContext } from "./types.ts";
 
 const HEAD = 4000;
 const TAIL = 4000;
@@ -55,7 +55,8 @@ export const bash: Tool = {
   async run(args, ctx) {
     const command = String(args.command);
     const timeout = Math.min(600, Math.max(1, Number(args.timeout) || 120));
-    if (!(await ctx.approve("bash", command))) return DENIED;
+    const no = await declined(ctx, "bash", command);
+    if (no) return no;
     const [cmd, argv] = ctx.sandbox.enabled
       ? ["/usr/bin/sandbox-exec", ["-p", seatbeltProfile(ctx.root, ctx.sandbox.noNet), "/bin/bash", "-c", command]]
       : ["/bin/bash", ["-c", command]];
@@ -72,6 +73,7 @@ export const bash: Tool = {
       const collect = (b: Buffer) => {
         if (size < MAX_KEEP) chunks.push(b);
         size += b.length;
+        ctx.onOutput?.(b.toString("utf8"));
       };
       child.stdout.on("data", collect);
       child.stderr.on("data", collect);

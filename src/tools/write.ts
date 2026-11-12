@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { checkFresh } from "./edit.ts";
-import { DENIED, fail, ok, rel, resolvePath, stamp, type Tool } from "./types.ts";
+import { declined, fail, ok, rel, resolvePath, stamp, type Tool } from "./types.ts";
 
 export const write: Tool = {
   name: "write",
@@ -25,9 +25,12 @@ export const write: Tool = {
     }
     const lines = content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
     const preview = content.split("\n").slice(0, 20).join("\n");
-    if (!(await ctx.approve("write", `${shown} (${exists ? "overwrite" : "new file"}, ${lines} lines)\n${preview}`))) return DENIED;
+    const no = await declined(ctx, "write", `${shown} (${exists ? "overwrite" : "new file"}, ${lines} lines)\n${preview}`);
+    if (no) return no;
+    const before = exists ? readFileSync(abs, "utf8") : null;
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content);
+    ctx.onChange?.(abs, before, content);
     ctx.seen.set(abs, stamp(abs));
     return ok(`${exists ? "Overwrote" : "Created"} ${shown} (${lines} lines)`);
   },

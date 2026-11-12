@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { DENIED, fail, ok, rel, resolvePath, stamp, type Tool, type ToolContext } from "./types.ts";
+import { declined, fail, ok, rel, resolvePath, stamp, type Tool, type ToolContext } from "./types.ts";
 
 // Typographic characters models often substitute. Each maps to exactly one character,
 // so indices in the normalized text are valid in the original.
@@ -127,8 +127,11 @@ export const edit: Tool = {
 
     const [s0, e0] = ranges[0];
     const diff = summarize(text.slice(s0, e0), replacement, lineOf(text, s0));
-    if (!(await ctx.approve("edit", `${shown}\n${diff}`))) return DENIED;
-    writeFileSync(abs, crlf ? out.replace(/\n/g, "\r\n") : out);
+    const no = await declined(ctx, "edit", `${shown}\n${diff}`);
+    if (no) return no;
+    const final = crlf ? out.replace(/\n/g, "\r\n") : out;
+    writeFileSync(abs, final);
+    ctx.onChange?.(abs, raw, final);
     ctx.seen.set(abs, stamp(abs));
     const note = [ranges.length > 1 ? `${ranges.length} replacements` : "", tier].filter(Boolean).join(", ");
     return ok(`Edited ${shown}${note ? ` (${note})` : ""}\n${diff}`);

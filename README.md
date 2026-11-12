@@ -16,6 +16,8 @@ bun src/cli.ts --cwd path/to/repo --yolo "fix the failing test"    # no prompts,
 
 `--profile` picks the model settings (`qwen3-coder`, `qwen3.6`, or hosted `or-sonnet` / `or-qwen3.6` via OpenRouter). `--base-url` points at any other OpenAI-compatible server. heyho reads the context size from llama-server and Ollama; for other servers, set `HEYHO_CTX` to the context size the server runs with.
 
+In a session, heyho shows what the model is doing while you wait, a diff before every edit, and each command's output. Edits and commands ask first; answer `y`, `n`, `a` (always), or type what to do instead and the model gets that as its answer. `--mode auto` stops asking for edits. `/undo` takes back the last turn's file changes, `/compact` frees context, `/resume` and `--continue` reopen earlier sessions, and `/help` lists the rest. `bun scripts/ui-demo.ts` plays a scripted session with no model, to see the screen.
+
 The eval: `bun eval/run.ts --profile qwen3-coder --tasks smoke` (or `all`, or task ids; `--harness pi` runs the same tasks through Pi).
 
 Built and measured on a MacBook Pro M1 Max with 64 GB, targeting Qwen3.6-35B-A3B at Q4 with a 64k context.

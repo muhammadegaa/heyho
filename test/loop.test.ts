@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newStats, runAgent } from "../src/loop.ts";
+import { compact } from "../src/compact.ts";
+import { newStats, runAgent, type AgentEvent } from "../src/loop.ts";
 import type { Message, Profile } from "../src/model.ts";
-import { TOOLS } from "../src/tools/index.ts";
+import { TOOLS, toolSchemas } from "../src/tools/index.ts";
 import type { ToolContext } from "../src/tools/types.ts";
 
 // A fake OpenAI-compatible server that streams scripted replies and records requests.
@@ -55,8 +56,9 @@ function setup() {
   const ctx: ToolContext = { root, stateDir: mkdtempSync(join(tmpdir(), "heyho-st-")), seen: new Map(), approve: async () => true, sandbox: { enabled: false, noNet: false }, outCount: { n: 0 } };
   const messages: Message[] = [{ role: "system", content: "sys" }, { role: "user", content: "task" }];
   const stats = newStats();
-  const run = (maxSteps = 10) => runAgent({ profile, messages, tools: TOOLS, ctx, maxSteps, contextSize: 65536, stats, onEvent: () => {}, record: () => {} });
-  return { root, messages, stats, run };
+  const events: AgentEvent[] = [];
+  const run = (maxSteps = 10) => runAgent({ profile, messages, tools: TOOLS, ctx, maxSteps, contextSize: 65536, stats, onEvent: (e) => events.push(e), record: () => {} });
+  return { root, messages, stats, run, ctx, events };
 }
 
 test("each request extends the previous one unchanged (append-only prefix)", async () => {
@@ -87,6 +89,44 @@ test("thinking is sent back with the turn it came from", async () => {
   const replayed = requests[1].messages[2] as { content: string | null; reasoning_content?: string };
   expect(replayed.reasoning_content).toBe("Read a.txt first.");
   expect(replayed.content).toBeNull();
+});
+
+test("the screen is told about each stage of a step, in order", async () => {
+  const { run, events } = setup();
+  script = [{ reasoning: "Read it.", calls: [["read", '{"path":"a.txt"}']] }, { text: "ok" }];
+  await run();
+  const stages = events.map((e) => e.type).filter((t, i, all) => t !== all[i - 1]);
+  expect(stages).toEqual(["request", "thinking", "calling", "turn", "tool_start", "tool", "request", "text", "turn"]);
+});
+
+test("what the user types instead of approving reaches the model", async () => {
+  const { run, ctx, messages, root } = setup();
+  ctx.approve = async () => "keep it, change b.txt instead";
+  script = [{ calls: [["edit", '{"path":"a.txt","old_string":"hello","new_string":"bye"}']] }, { text: "ok" }];
+  await run();
+  expect((messages[3] as { content: string }).content).toBe("The user declined this action and said: keep it, change b.txt instead");
+  expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("hello\n");
+});
+
+test("edits and new files report the content before and after", async () => {
+  const { run, ctx } = setup();
+  const seen: [string, string | null, string][] = [];
+  ctx.onChange = (abs, before, after) => seen.push([abs.split("/").pop()!, before, after]);
+  script = [{ calls: [["edit", '{"path":"a.txt","old_string":"hello","new_string":"bye"}'], ["write", '{"path":"n.txt","content":"new"}']] }, { text: "ok" }];
+  await run();
+  expect(seen).toEqual([["a.txt", "hello\n", "bye\n"], ["n.txt", null, "new"]]);
+});
+
+test("shortening keeps the system prompt and the model's notes", async () => {
+  requests.length = 0;
+  script = [{ text: "Notes: changed a.txt." }];
+  const before: Message[] = [{ role: "system", content: "sys" }, { role: "user", content: "task" }, { role: "assistant", content: "did it" }];
+  const after = await compact(profile, before, toolSchemas(TOOLS));
+  expect(after.length).toBe(2);
+  expect(after[0]).toEqual(before[0]);
+  expect((after[1] as { content: string }).content).toContain("Notes: changed a.txt.");
+  expect(requests[0].tool_choice).toBe("none");
+  expect(JSON.stringify(requests[0].messages.slice(0, 3))).toBe(JSON.stringify(before));
 });
 
 test("calls cut off by the output limit are not executed", async () => {

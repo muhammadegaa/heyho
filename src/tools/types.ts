@@ -5,7 +5,10 @@ export type ToolContext = {
   root: string; // real path of the workspace
   stateDir: string; // ~/.heyho/projects/<hash>, readable by the read tool
   seen: Map<string, string>; // abs path → mtime:size when last read or written by the agent
-  approve: (kind: "edit" | "write" | "bash", summary: string) => Promise<boolean>;
+  // true allows; false or a string declines, the string being what the user said instead.
+  approve: (kind: "edit" | "write" | "bash", summary: string) => Promise<boolean | string>;
+  onChange?: (abs: string, before: string | null, after: string) => void; // a file was written
+  onOutput?: (chunk: string) => void; // live output of a running command
   sandbox: { enabled: boolean; noNet: boolean };
   outCount: { n: number };
   signal?: AbortSignal;
@@ -23,7 +26,12 @@ export type Tool = {
 export const fail = (text: string): ToolResult => ({ ok: false, text });
 export const ok = (text: string): ToolResult => ({ ok: true, text });
 
-export const DENIED = fail("The user declined this action. Ask what they want instead, or try another approach.");
+// Asks the user. Returns the result to hand back to the model when they decline.
+export async function declined(ctx: ToolContext, kind: "edit" | "write" | "bash", summary: string): Promise<ToolResult | null> {
+  const a = await ctx.approve(kind, summary);
+  if (a === true) return null;
+  return fail(a ? `The user declined this action and said: ${a}` : "The user declined this action. Ask what they want instead, or try another approach.");
+}
 
 function inside(parent: string, child: string) {
   const r = relative(parent, child);

@@ -4,6 +4,11 @@ import { toolSchemas } from "./tools/index.ts";
 import { fail, type Tool, type ToolContext, type ToolResult } from "./tools/types.ts";
 
 export type AgentEvent =
+  | { type: "request"; step: number } // sent to the model, nothing back yet
+  | { type: "thinking"; text: string }
+  | { type: "calling"; name: string; argChars: number }
+  | { type: "retry"; reason: string }
+  | { type: "tool_start"; name: string; args: Record<string, unknown> }
   | { type: "text"; text: string }
   | { type: "turn"; step: number; usage: Usage; ms: number }
   | { type: "tool"; name: string; args: Record<string, unknown>; result: ToolResult };
@@ -59,7 +64,8 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
     const t0 = Date.now();
     let reply: Reply;
     try {
-      reply = await chat(o.profile, o.messages, schemas, { onText: (text) => o.onEvent({ type: "text", text }), signal: o.signal });
+      o.onEvent({ type: "request", step });
+      reply = await chat(o.profile, o.messages, schemas, { ...streamEvents(o), signal: o.signal });
     } catch (e) {
       if (e instanceof ContextOverflowError) return { status: "context_full", reason: e.message };
       throw e;
@@ -127,11 +133,19 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
   }
 
   push({ role: "user", content: "You have reached the step limit. Do not call any tools. Reply with what you changed, what is left to do, and the current state." });
-  const wrap = await chat(o.profile, o.messages, schemas, { toolChoice: "none", onText: (text) => o.onEvent({ type: "text", text }), signal: o.signal });
+  o.onEvent({ type: "request", step: o.maxSteps + 1 });
+  const wrap = await chat(o.profile, o.messages, schemas, { toolChoice: "none", ...streamEvents(o), signal: o.signal });
   o.stats.turns.push(wrap.usage);
   push({ role: "assistant", content: wrap.message.content });
   return { status: "step_limit" };
 }
+
+const streamEvents = (o: RunOptions) => ({
+  onText: (text: string) => o.onEvent({ type: "text", text }),
+  onReasoning: (text: string) => o.onEvent({ type: "thinking", text }),
+  onCall: (name: string, argChars: number) => o.onEvent({ type: "calling", name, argChars }),
+  onRetry: (reason: string) => o.onEvent({ type: "retry", reason }),
+});
 
 async function runCall(
   call: ToolCall,
@@ -151,6 +165,7 @@ async function runCall(
   const repeats = guard.see(name, args);
   if (repeats >= IDENTICAL_STOP) return { name, args, result: fail(`[stopped] This exact call was made ${repeats} times in a row.`) };
   let result: ToolResult;
+  o.onEvent({ type: "tool_start", name, args });
   try {
     result = await tool.run(args, o.ctx);
   } catch (e) {
