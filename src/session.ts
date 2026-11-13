@@ -95,3 +95,17 @@ export function listSessions(stateDir: string, limit = 10, opts: { headless?: bo
   }
   return out;
 }
+
+// The last things the user typed in a session, one line each, for the picker's preview.
+export function sessionPreview(file: string, count = 6): string[] {
+  return prompts(file).texts.slice(-count).map((t) => t.replace(/^\[[^\]]*\]\s*/, "").replace(/\s+/g, " ").slice(0, 100));
+}
+
+export function ago(when: Date, now = Date.now()): string {
+  const min = Math.floor((now - when.getTime()) / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)} h ago`;
+  if (min < 48 * 60) return "yesterday";
+  return `${Math.floor(min / (24 * 60))} days ago`;
+}

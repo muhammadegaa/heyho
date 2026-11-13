@@ -11,7 +11,7 @@ import { MODE_HELP, MODES, type Mode } from "../approve.ts";
 import { expand, loadCommands } from "../commands.ts";
 import { listFiles } from "../input.ts";
 import { heyhoHome } from "../settings.ts";
-import type { SessionInfo } from "../session.ts";
+import { ago, sessionPreview, type SessionInfo } from "../session.ts";
 import { changeTitle, paint, renderDiff, tidyPaths } from "../ui.ts";
 import * as ed from "./edit.ts";
 import { normalKey } from "./vim.ts";
@@ -156,6 +156,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuOff, setMenuOff] = useState(false); // closed with Esc until the text changes
   // The trust question is up from the first frame, so the input box never shows before it.
+  const [preview, setPreview] = useState(false); // the session picker is showing what was asked in the highlighted session
   const [overlay, setOverlayRaw] = useState<Overlay | null>(app.needsTrust && !app.trusted ? { type: "trust", choices: [{ label: "Yes, I trust this project: use them", value: true }, { label: "No: leave them off", value: false }] } : null);
   const [filter, setFilter] = useState(""); // typed into a picker that can be searched
   const setOverlay = (o: Overlay | null) => (setFilter(""), setOverlayRaw(o));
@@ -223,7 +224,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const openResume = () => {
     const list = app.sessions();
     if (!list.length) return store.note("No earlier sessions in this folder.", "dim");
-    setOverlay({ type: "resume", choices: list.map((s) => ({ label: s.first, hint: `${s.when.toLocaleString()} · ${s.turns} message${s.turns > 1 ? "s" : ""}`, value: s })) });
+    setOverlay({ type: "resume", choices: list.map((s) => ({ label: s.first, hint: `${ago(s.when)} · ${s.turns} message${s.turns > 1 ? "s" : ""}`, value: s })) });
   };
   useEffect(() => {
     if (pickSession && !(app.needsTrust && !app.trusted)) openResume();
@@ -568,6 +569,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       if (key.downArrow) return setChoice((c) => (c + 1) % choices.length);
       if (key.return) return pick(choice);
       if (key.tab && pending) return setSaying(ed.EMPTY);
+      if (key.tab && overlay?.type === "resume") return setPreview((on) => !on);
       const n = Number(input);
       if (input && n >= 1 && n <= choices.length && !searchable && overlay?.type !== "rewind") return pick(n - 1);
       return;
@@ -740,7 +742,15 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
           {searchable ? <Text>{`Search: ${filter}`}<Text dimColor>{filter ? "" : "type to narrow the list"}</Text></Text> : null}
           <List choices={shownChoices!} index={Math.min(choice, Math.max(0, shownChoices!.length - 1))} numbered={overlay.type === "rewindWhat" || overlay.type === "plan" || overlay.type === "trust"} />
           {shownChoices!.length ? null : <Text dimColor>  nothing matches</Text>}
-          <Text dimColor>Enter to choose · Esc to cancel</Text>
+          {overlay.type === "resume" && preview && shownChoices![Math.min(choice, shownChoices!.length - 1)] ? (
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor>Asked in this session:</Text>
+              {sessionPreview((shownChoices![Math.min(choice, shownChoices!.length - 1)].value as SessionInfo).file).map((line, n) => (
+                <Text key={n} dimColor wrap="truncate-end">{`  ${line}`}</Text>
+              ))}
+            </Box>
+          ) : null}
+          <Text dimColor>{overlay.type === "resume" ? `Enter to choose · Tab ${preview ? "hides the preview" : "previews"} · Esc to cancel` : "Enter to choose · Esc to cancel"}</Text>
         </Box>
       ) : null}
 

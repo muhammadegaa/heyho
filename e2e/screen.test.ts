@@ -349,6 +349,27 @@ test("/clear then /resume reopens the earlier session by its first message", asy
   await s.wait(/Reopened "say hello"/);
 });
 
+test("the session list shows how long ago each session was, and Tab previews what was asked in it", async () => {
+  s = await open({ steps: [reply("Hello.\n"), reply("Goodbye.\n")] });
+  await s.send("say hello");
+  await s.wait(/Hello\./);
+  await s.send("now say goodbye in French");
+  await s.wait(/Goodbye\./);
+  await s.send("/clear");
+  await s.wait(/New conversation/);
+  await s.send("/resume");
+  const list = await s.wait(/Reopen a session[\s\S]*❯ say hello/);
+  expect(list).toMatch(/just now · 2 messages/);
+  expect(list).toMatch(/Tab previews/);
+  const panel = () => s!.screen().split("Reopen a session")[1];
+  expect(panel()).not.toMatch(/goodbye in French/);
+  await s.key("Tab");
+  await s.wait(/Asked in this session:[\s\S]*say hello[\s\S]*now say goodbye in French/);
+  await s.key("Tab");
+  await s.wait(/Tab previews/);
+  expect(panel()).not.toMatch(/goodbye in French/);
+});
+
 test("/help lists commands and keys", async () => {
   s = await open();
   await s.send("/help");

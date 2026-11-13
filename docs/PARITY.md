@@ -73,11 +73,15 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 - A wildcard rule such as `npm test *` also covered whatever was chained or redirected after it (`npm test && rm -rf .`). Caught by a unit test before it shipped.
 - Tables, quotes and links were printed as raw markdown.
 
+### Closed after the real-model runs
+
+- Session picker: each entry shows how long ago it was, and Tab shows what was asked in the highlighted session. `e2e/screen.test.ts` "the session list shows how long ago each session was, and Tab previews what was asked in it"; `test/ui.test.ts` "ages are given in the largest unit that fits".
+
 ### Still open
 
 1. Image paste. Out of scope for now: the local models in use take text only, so there is nothing to send an image to.
 
-Smaller differences that remain inside closed rows: code colouring is by rough rules, not a grammar per language; vim mode covers the common keys, not registers, counts or visual mode; there is one colour theme plus "none"; MCP is stdio only; the session picker has no preview pane; there is no full-screen mode with mouse scrolling.
+Smaller differences that remain inside closed rows: code colouring is by rough rules, not a grammar per language; vim mode covers the common keys, not registers, counts or visual mode; there is one colour theme plus "none"; MCP is stdio only; there is no full-screen mode with mouse scrolling.
 
 Different by design, not planned: a second model that reviews each action (Claude Code's `auto` mode). heyho's no-prompt mode contains commands with the macOS sandbox instead. Out of scope: IDE, desktop, web and cloud features.
 

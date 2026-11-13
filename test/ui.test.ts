@@ -222,6 +222,13 @@ test("a session reloads its messages, starting after the last reset", async () =
   expect(listSessions(dir, 10, { headless: true }).map((x) => x.first)).toContain("one-off question");
 });
 
+test("ages are given in the largest unit that fits", async () => {
+  const { ago } = await import("../src/session.ts");
+  const now = Date.UTC(2026, 10, 13, 12, 0, 0);
+  const back = (ms: number) => ago(new Date(now - ms), now);
+  expect([back(20_000), back(5 * 60_000), back(3 * 3_600_000), back(26 * 3_600_000), back(9 * 86_400_000)]).toEqual(["just now", "5 min ago", "3 h ago", "yesterday", "9 days ago"]);
+});
+
 test("sessions opened in the same millisecond get separate files", () => {
   const dir = mkdtempSync(join(tmpdir(), "heyho-state-"));
   const files = new Set(Array.from({ length: 20 }, () => newSession(dir).file));
