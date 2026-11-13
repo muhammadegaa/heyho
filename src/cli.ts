@@ -20,6 +20,7 @@ Options
   --mode <ask|auto|plan>  ask before every edit and command (default), only before commands,
                         or change nothing and propose a plan
   --continue            carry on from the last session in this directory
+  --resume [name]       reopen a session by name, or choose from a list
   --yolo                with a task: no approval prompts; bash runs in the macOS sandbox
   --no-net              with --yolo, the sandbox also blocks network access
   --max-steps <n>       step limit (default 40)
@@ -40,6 +41,7 @@ async function main() {
       model: { type: "string" },
       mode: { type: "string", default: "ask" },
       continue: { type: "boolean", default: false },
+      resume: { type: "boolean", default: false },
       yolo: { type: "boolean", default: false },
       "no-net": { type: "boolean", default: false },
       "max-steps": { type: "string", default: "40" },
@@ -55,7 +57,8 @@ async function main() {
   if (opt.version) return console.log(VERSION);
   if (!["ask", "auto", "plan"].includes(opt.mode!)) throw new Error(`--mode is "ask", "auto" or "plan", not "${opt.mode}".`);
 
-  const task = positionals.join(" ").trim();
+  const resumeName = opt.resume && positionals.length ? positionals.join(" ").trim() : undefined;
+  const task = resumeName ? "" : positionals.join(" ").trim();
   const headless = task.length > 0;
   if (opt.yolo && !headless) throw new Error("--yolo needs a task argument; it is for unattended runs. In a session, use /mode yolo.");
   if (opt.json && !headless) throw new Error("--json needs a task argument.");
@@ -77,7 +80,8 @@ async function main() {
   if (opt.plain || !process.stdin.isTTY || !process.stdout.isTTY) return runLineMode(options);
   // Loaded only here, so headless runs don't pay for the UI library.
   const { runTui } = await import("./tui/index.tsx");
-  await runTui(options, VERSION);
+  // `--resume` takes an optional name; with one, the words after it are the name, not a task.
+  await runTui(options, VERSION, resumeName ?? (opt.resume ? true : undefined));
 }
 
 main().catch((e) => {

@@ -17,10 +17,11 @@ export const FILES = {
   "README.md": "# demo\n",
 };
 
-export async function open(opts: { steps?: Step[]; files?: Record<string, string>; cols?: number; rows?: number; args?: string[]; git?: boolean } = {}) {
+// `root` reuses an earlier session's folder (and so its saved sessions) instead of making a new one.
+export async function open(opts: { steps?: Step[]; files?: Record<string, string>; cols?: number; rows?: number; args?: string[]; git?: boolean; root?: string; env?: Record<string, string> } = {}) {
   const name = `heyho-e2e-${process.pid}-${++n}`;
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "heyho-e2e-")));
-  for (const [path, content] of Object.entries(opts.files ?? FILES)) {
+  const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "heyho-e2e-")));
+  for (const [path, content] of Object.entries(opts.root ? {} : (opts.files ?? FILES))) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);
   }
@@ -28,7 +29,7 @@ export async function open(opts: { steps?: Step[]; files?: Record<string, string
   const stepsFile = join(root, ".steps.json");
   writeFileSync(stepsFile, JSON.stringify(opts.steps ?? []));
   const demo = join(import.meta.dirname, "../scripts/ui-demo.ts");
-  tmux("new-session", "-d", "-s", name, "-x", String(opts.cols ?? 100), "-y", String(opts.rows ?? 30), "-e", `DEMO_STEPS=${stepsFile}`, "-e", `DEMO_ROOT=${root}`, "-e", "DEMO_FAST=1",
+  tmux("new-session", "-d", "-s", name, "-x", String(opts.cols ?? 100), "-y", String(opts.rows ?? 30), "-e", `DEMO_STEPS=${stepsFile}`, "-e", `DEMO_ROOT=${root}`, "-e", "DEMO_FAST=1", ...Object.entries(opts.env ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
     `bun ${demo} ${(opts.args ?? []).join(" ")}; echo heyho has exited; sleep 600`);
   const s = {
     root,
@@ -55,7 +56,7 @@ export async function open(opts: { steps?: Step[]; files?: Record<string, string
     send: async (text: string) => (await s.type(text), await s.key("Enter")),
     close: () => tmux("kill-session", "-t", name),
   };
-  await s.wait(/describe a task|Type a task/);
+  await s.wait(/describe a task|Type a task|Reopen a session/);
   return s;
 }
 

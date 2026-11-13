@@ -4,7 +4,8 @@ import { App, type AppOptions } from "../app.ts";
 import { Screen } from "./screen.tsx";
 import { Store } from "./store.ts";
 
-export async function runTui(opts: AppOptions, version: string) {
+// `resume` is what --resume was given: a name to reopen, or true to choose from a list.
+export async function runTui(opts: AppOptions, version: string, resume?: string | true) {
   const store = new Store();
   const app = new App(opts, {
     onEvent: store.onEvent,
@@ -16,7 +17,12 @@ export async function runTui(opts: AppOptions, version: string) {
   store.root = app.root;
   await app.start();
   store.add(" ", `\x1b[1mheyho\x1b[0m \x1b[2mv${version} · ${app.profile.model} on ${app.server} · ${app.contextSize} tokens of context\n${app.root.replace(homedir(), "~")}\x1b[0m`);
+  const named = typeof resume === "string" ? app.sessions().find((x) => x.first.toLowerCase().includes(resume.toLowerCase())) : undefined;
+  if (named) {
+    app.resume(named);
+    store.note(`Reopened "${named.first}".`, "dim");
+  } else if (typeof resume === "string") store.note(`No session here matches "${resume}". Choose one:`, "warn");
   if (app.resumed) store.note(`Continuing the session from ${app.resumed.when.toLocaleString()}: "${app.resumed.first}"`, "dim");
-  const ink = render(<Screen app={app} store={store} />, { exitOnCtrlC: false, patchConsole: false });
+  const ink = render(<Screen app={app} store={store} version={version} pickSession={resume !== undefined && !named} />, { exitOnCtrlC: false, patchConsole: false });
   await ink.waitUntilExit();
 }

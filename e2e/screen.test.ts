@@ -453,3 +453,152 @@ test("a table is drawn with aligned columns and no pipes", async () => {
   expect(screen).toMatch(/File\s+Lines\n\s+─+\s+─+\n\s+src\/cart\.js\s+15\n\s+b\.js\s+3/);
   expect(screen).not.toMatch(/\|/);
 });
+
+// ---- sessions that outlive the process ----
+
+test("rewind still restores a file after heyho is closed and reopened with --continue", async () => {
+  s = await open({ steps: [EDIT, reply("Changed.\n")] });
+  await s.send("change the greeting");
+  await s.wait(/Make this edit\?/);
+  await s.key("1");
+  await s.wait(/worked for/);
+  const root = s.root;
+  await s.send("/exit");
+  await s.wait(/heyho has exited/);
+  s.close();
+  expect(readFileSync(join(root, "greet.js"), "utf8")).toContain("good morning");
+
+  s = await open({ root, args: ["--continue"] });
+  await s.wait(/Continuing the session/);
+  await s.key("Escape", "Escape");
+  await s.wait(/Go back to before which message\?[\s\S]*❯ change the greeting/);
+  await s.key("Enter");
+  await s.wait(/What should be restored\?/);
+  await s.key("1");
+  await s.wait(/› change the greeting/);
+  expect(readFileSync(join(root, "greet.js"), "utf8")).toContain('"hello"');
+});
+
+test("a session can be named, is listed under that name, and --resume opens it by name", async () => {
+  s = await open({ steps: [reply("Hello.\n")] });
+  await s.send("say hello");
+  await s.wait(/worked for/);
+  await s.send("/rename greeting work");
+  await s.wait(/Session named "greeting work"/);
+  await s.wait(/greeting work · qwen3-coder/);
+  const root = s.root;
+  await s.send("/exit");
+  await s.wait(/heyho has exited/);
+  s.close();
+
+  s = await open({ root, args: ["--resume", "greeting"] });
+  await s.wait(/Reopened "greeting work"/);
+  await s.wait(/greeting work · qwen3-coder/);
+});
+
+test("--resume with no name opens a list that narrows as you type", async () => {
+  s = await open({ steps: [reply("One.\n")] });
+  await s.send("alpha task");
+  await s.wait(/worked for/);
+  const root = s.root;
+  await s.send("/clear");
+  await s.wait(/New conversation/);
+  await s.send("bravo task");
+  await s.wait(/worked for/);
+  await s.send("/exit");
+  await s.wait(/heyho has exited/);
+  s.close();
+
+  s = await open({ root, args: ["--resume"] });
+  const list = await s.wait(/Reopen a session/);
+  expect(list).toMatch(/alpha task/);
+  expect(list).toMatch(/bravo task/);
+  await s.type("alp");
+  const narrowed = await s.wait(/Search: alp/);
+  expect(narrowed).not.toMatch(/bravo task/);
+  await s.key("Enter");
+  await s.wait(/Reopened "alpha task"/);
+});
+
+test("the mode a session was in comes back when it is reopened", async () => {
+  s = await open({ steps: [reply("One.\n")] });
+  await s.key("BTab");
+  await s.wait(/⏵⏵ auto/);
+  await s.send("do a thing");
+  await s.wait(/worked for/);
+  const root = s.root;
+  await s.send("/exit");
+  await s.wait(/heyho has exited/);
+  s.close();
+  s = await open({ root, args: ["--continue"] });
+  await s.wait(/⏵⏵ auto/);
+});
+
+// ---- input: search, editor, stash ----
+
+test("Ctrl+R searches earlier messages and puts the chosen one in the box", async () => {
+  s = await open({ steps: [reply("One.\n"), reply("Two.\n")] });
+  await s.send("fix the tax bug");
+  await s.wait(/worked for/);
+  await s.send("rename the helper");
+  await s.wait(/Two\./);
+  await s.key("C-r");
+  await s.wait(/Earlier messages/);
+  await s.type("tax");
+  await s.wait(/Search: tax[\s\S]*❯ fix the tax bug/);
+  await s.key("Enter");
+  await s.wait(/› fix the tax bug/);
+});
+
+test("Ctrl+G opens the message in $EDITOR and takes back what was saved", async () => {
+  s = await open({ env: { EDITOR: "sh -c 'printf \" plus-editor-text\" >> \"$0\"'" } });
+  await s.type("from the box");
+  await s.key("C-g");
+  await s.wait(/› from the box plus-editor-text/);
+  expect(rules(s.screen())).toBe(2);
+});
+
+test("Ctrl+S sets a draft aside and brings it back", async () => {
+  s = await open();
+  await s.type("half written");
+  await s.key("C-s");
+  await s.wait(/describe a task/);
+  await s.key("C-s");
+  await s.wait(/› half written/);
+});
+
+test("? on an empty box shows the help", async () => {
+  s = await open();
+  await s.type("?");
+  await s.wait(/Ctrl\+R searches history/);
+});
+
+// ---- commands ----
+
+test("/export writes the conversation to a file", async () => {
+  s = await open({ steps: [reply("The answer is 42.\n")] });
+  await s.send("what is the answer");
+  await s.wait(/worked for/);
+  await s.send("/export out.md");
+  await s.wait(/Wrote the conversation to/);
+  const text = readFileSync(join(s.root, "out.md"), "utf8");
+  expect(text).toMatch(/## You\n\nwhat is the answer/);
+  expect(text).toMatch(/## heyho\n\nThe answer is 42\./);
+});
+
+test("/copy puts the last reply on the clipboard", async () => {
+  s = await open({ steps: [reply("Clipboard check 7781.\n")] });
+  await s.send("say it");
+  await s.wait(/worked for/);
+  await s.send("/copy");
+  await s.wait(/Copied the last reply/);
+  expect(Bun.spawnSync(["pbpaste"]).stdout.toString()).toContain("Clipboard check 7781.");
+});
+
+test("/status shows version, model, folder and session", async () => {
+  s = await open();
+  await s.send("/status");
+  const screen = await s.wait(/heyho v\d[\s\S]*folder:/);
+  expect(screen).toMatch(/model: qwen3-coder/);
+  expect(screen).toMatch(/mode: ask/);
+});

@@ -17,6 +17,11 @@ export class Changes {
     this.turns.push(new Map());
   }
 
+  // Puts back the turns read from a session file.
+  load(turns: Map<string, Entry>[]) {
+    this.turns = turns;
+  }
+
   record = (abs: string, before: string | null, after: string) => {
     const turn = this.turns.at(-1);
     if (!turn) return;

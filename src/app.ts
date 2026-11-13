@@ -13,7 +13,7 @@ import { newStats, runAgent, type AgentEvent, type RunResult, type Stats } from 
 import { probeContext, type Message, type Profile } from "./model.ts";
 import { loadProfile } from "./profiles.ts";
 import { systemPrompt } from "./prompt.ts";
-import { listSessions, loadMessages, newSession, type Session, type SessionInfo } from "./session.ts";
+import { listSessions, loadSession, newSession, type Checkpoint, type Loaded, type Session, type SessionInfo } from "./session.ts";
 import { TOOLS, toolSchemas } from "./tools/index.ts";
 import type { Change, ToolContext } from "./tools/types.ts";
 import type { RunInfo } from "./ui.ts";
@@ -50,8 +50,7 @@ export const INIT_TASK = `Write AGENTS.md at the root of this project: the notes
 const PLAN_ON = "[Plan mode is on. Investigate with read, search and read-only commands, then reply with a plan and stop. Do not change anything.]\n\n";
 const PLAN_OFF = "[Plan mode is off. You may now make changes.]\n\n";
 
-// Where a turn began: enough to put the conversation and the files back to that point.
-export type Checkpoint = { text: string; messages: number; turn: number };
+export type { Checkpoint };
 
 export class App {
   readonly root: string;
@@ -93,6 +92,7 @@ export class App {
       outCount: { n: 0 },
       onChange: (abs, before, after) => {
         this.changes.record(abs, before, after);
+        this.session.record({ change: { turn: this.changes.turnCount - 1, path: abs, before, after } });
         front.changed?.({ path: abs.startsWith(this.root + "/") ? abs.slice(this.root.length + 1) : abs, before, after });
       },
       onOutput: (chunk) => front.output?.(chunk),
@@ -105,7 +105,33 @@ export class App {
     await this.connect();
     this.resumed = this.opts.resume ? listSessions(this.stateDir, 1)[0] : undefined;
     if (this.opts.resume && !this.resumed) throw new Error("There is no earlier session in this directory to continue.");
-    this.open(this.resumed ? loadMessages(this.resumed.file) : [{ role: "system", content: systemPrompt(this.root) }], true);
+    if (this.resumed) this.restore(loadSession(this.resumed.file));
+    else this.open([{ role: "system", content: systemPrompt(this.root) }], true);
+  }
+
+  // Opens a new session file that carries on an earlier one: its conversation, the points
+  // it can be rewound to, the file changes behind them, its name and its mode.
+  private restore(old: Loaded) {
+    this.open(old.messages, true);
+    this.ctx.seen.clear();
+    this.checkpoints.length = 0;
+    this.checkpoints.push(...old.checkpoints);
+    this.changes.load(old.turns);
+    old.turns.forEach((turn, n) => turn.forEach((e, path) => this.session.record({ change: { turn: n, path, ...e } })));
+    this.saveCheckpoints();
+    if (old.name) this.rename(old.name);
+    if (old.mode && old.mode !== "yolo" && MODES.includes(old.mode as Mode)) this.setMode(old.mode as Mode);
+  }
+
+  private saveCheckpoints() {
+    this.session.record({ checkpoints: this.checkpoints });
+    this.session.record({ turns: this.changes.turnCount });
+  }
+
+  name = "";
+  rename(name: string) {
+    this.name = name.trim();
+    this.session.record({ name: this.name });
   }
 
   async connect() {
@@ -123,6 +149,7 @@ export class App {
   }
   setMode(mode: Mode) {
     this.approvals.mode = mode;
+    this.session?.record({ meta: { mode } });
     this.ctx.sandbox.enabled = mode === "yolo";
   }
   cycleMode(): Mode {
@@ -152,7 +179,7 @@ export class App {
   private open(next: Message[], fresh: boolean) {
     if (fresh) {
       this.session = newSession(this.stateDir);
-      this.session.record({ meta: { root: this.root, profile: this.profileName, model: this.profile.model, baseUrl: this.profile.baseUrl, contextSize: this.contextSize, server: this.server, headless: this.opts.headless } });
+      this.session.record({ meta: { root: this.root, profile: this.profileName, model: this.profile.model, baseUrl: this.profile.baseUrl, contextSize: this.contextSize, server: this.server, headless: this.opts.headless, mode: this.mode } });
     } else this.session.record({ reset: true });
     this.messages.length = 0;
     this.messages.push(...next);
@@ -170,6 +197,7 @@ export class App {
     this.open(next, false);
     // Earlier prompts are gone from the conversation, so it can't be rewound to them any more.
     for (const c of this.checkpoints) c.messages = Math.min(c.messages, this.messages.length);
+    this.saveCheckpoints();
     this.front.note("Shortened the conversation to the model's own notes. Files it read earlier will be read again when needed.", "dim");
   }
 
@@ -177,6 +205,7 @@ export class App {
     const withPaths = text.replace(/(^|\s)@(\S+)/g, (all, lead, p) => (existsSync(join(this.root, p)) ? lead + p : all));
     const plan = this.mode === "plan";
     this.checkpoints.push({ text, messages: this.messages.length, turn: this.changes.turnCount });
+    this.saveCheckpoints();
     this.push({ role: "user", content: (plan && !this.toldPlan ? PLAN_ON : !plan && this.toldPlan ? PLAN_OFF : "") + this.note + withPaths });
     this.toldPlan = plan;
     this.note = "";
@@ -235,15 +264,15 @@ export class App {
     this.open([{ role: "system", content: systemPrompt(this.root) }], true);
     this.ctx.seen.clear();
     this.checkpoints.length = 0;
+    this.changes.load([]);
+    this.name = "";
   }
 
   sessions(): SessionInfo[] {
     return listSessions(this.stateDir).filter((s) => s.file !== this.session.file);
   }
   resume(info: SessionInfo) {
-    this.open(loadMessages(info.file), true);
-    this.ctx.seen.clear();
-    this.checkpoints.length = 0;
+    this.restore(loadSession(info.file));
   }
 
   private tellUndone(restored: string[]) {
@@ -253,6 +282,7 @@ export class App {
   undo(): { restored: string[]; skipped: string[] } | null {
     const r = this.changes.undo();
     if (r) this.tellUndone(r.restored);
+    this.saveCheckpoints();
     return r;
   }
 
@@ -267,6 +297,7 @@ export class App {
       this.toldPlan = false;
       this.note = "";
     } else this.tellUndone(files.restored);
+    this.saveCheckpoints();
     return { text: cp.text, ...files };
   }
 
@@ -290,6 +321,32 @@ export class App {
     const output = (r.stdout ?? "") + (r.stderr ?? "");
     this.note += `[The user ran \`${command.trim()}\` (exit code ${r.status}):\n${output.slice(-4000)}]\n\n`;
     return { output, code: r.status };
+  }
+
+  // The conversation as markdown: what was asked, what was answered, and which tools ran.
+  exportText(): string {
+    const out: string[] = [`# heyho session${this.name ? `: ${this.name}` : ""}`, "", `${this.profile.model} · ${this.root} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, ""];
+    for (const m of this.messages) {
+      if (m.role === "user") out.push("## You", "", m.content, "");
+      else if (m.role === "assistant") {
+        if (m.content) out.push("## heyho", "", m.content, "");
+        for (const c of m.tool_calls ?? []) out.push(`- ran \`${c.function.name}\` ${c.function.arguments.replace(/\s+/g, " ").slice(0, 160)}`);
+        if (m.tool_calls?.length) out.push("");
+      }
+    }
+    return out.join("\n");
+  }
+
+  status(version: string): string[] {
+    return [
+      `heyho v${version}`,
+      `folder: ${this.root}`,
+      `model: ${this.profile.model} (profile ${this.profileName}) on ${this.server}, ${this.profile.baseUrl}`,
+      `context: ${this.contextUsed} of ${this.contextSize} tokens`,
+      `mode: ${this.mode}`,
+      `session: ${this.name || "(unnamed)"} · ${this.session.file}`,
+      `messages you can go back to: ${this.checkpoints.length}`,
+    ];
   }
 
   banner() {

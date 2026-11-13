@@ -1,7 +1,9 @@
 // The interactive screen: the transcript scrolls above, and below it sit whatever is in
 // progress, any question for the user, the input box and a footer.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from "ink";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { INIT_TASK, type App, type ApprovalAnswer, type ApprovalRequest } from "../app.ts";
@@ -28,6 +30,10 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["rewind", "", "go back to an earlier message: files, conversation or both"],
   ["undo", "", "take back the file changes of the last turn that made any"],
   ["diff", "", "show uncommitted changes (git diff)"],
+  ["rename", "<name>", "name this session, for /resume and --resume"],
+  ["export", "[file]", "write the conversation to a markdown file"],
+  ["copy", "", "copy the last reply to the clipboard"],
+  ["status", "", "version, model, folder, session"],
   ["mode", "[ask|auto|plan|yolo]", "show or set the mode"],
   ["allowed", "[reset]", "what runs without asking; reset forgets saved rules"],
   ["init", "", "have the model write AGENTS.md for this project"],
@@ -38,7 +44,8 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
 const KEYS = `Enter sends · \\ then Enter, Option+Enter or Ctrl+J starts a new line · paste keeps its lines
 / commands · @ files · ! runs a shell command yourself · Up/Down history
 Shift+Tab changes mode · Esc stops the model · Esc Esc on an empty line opens rewind
-Ctrl+O shows the last command's full output · Ctrl+C twice or Ctrl+D quits`;
+Ctrl+R searches history · Ctrl+G edits the message in $EDITOR · Ctrl+S sets the draft aside and brings it back
+Ctrl+O shows the last command's full output · Ctrl+L redraws · Ctrl+C twice or Ctrl+D quits`;
 
 const MODE_LABEL: Record<Mode, string> = { ask: "⏸ ask", auto: "⏵⏵ auto", plan: "⏸ plan", yolo: "⏵⏵ yolo" };
 const MODE_SHORT: Record<Mode, string> = { ask: "asks before edits and commands", auto: "edits don't ask", plan: "read-only, proposes a plan", yolo: "nothing asks, commands sandboxed" };
@@ -46,6 +53,7 @@ const MODE_SHORT: Record<Mode, string> = { ask: "asks before edits and commands"
 type Choice<T> = { label: string; hint?: string; value: T };
 type Overlay =
   | { type: "resume"; choices: Choice<SessionInfo>[] }
+  | { type: "history"; choices: Choice<string>[] }
   | { type: "rewind"; choices: Choice<number>[] }
   | { type: "rewindWhat"; index: number; choices: Choice<{ code: boolean; conversation: boolean }>[] }
   | { type: "plan"; choices: Choice<"auto" | "ask" | "keep">[] };
@@ -78,7 +86,8 @@ function List<T>({ choices, index, numbered = true }: { choices: Choice<T>[]; in
 // One line whatever the width: the right side goes first when there is no room, then the hint is cut.
 function Footer({ width, mode, hint, right }: { width: number; mode: Mode; hint: string; right: string }) {
   const label = `  ${MODE_LABEL[mode]}`;
-  const showRight = label.length + 3 + hint.length + 2 + right.length + 1 <= width;
+  // The model and context use matter more than the hint, so the hint is cut first.
+  const showRight = label.length + 2 + right.length + 1 <= width;
   const room = width - label.length - 3 - (showRight ? right.length + 3 : 0);
   const shown = hint.length <= room ? hint : room > 8 ? hint.slice(0, room - 1) + "…" : "";
   return (
@@ -109,9 +118,9 @@ function InputText({ edit, active, hint }: { edit: ed.Edit; active: boolean; hin
   return <Text>{value.slice(0, cursor) + (active ? `\x1b[7m${under}\x1b[27m` : under) + after}</Text>;
 }
 
-export function Screen({ app, store }: { app: App; store: Store }) {
+export function Screen({ app, store, version, pickSession }: { app: App; store: Store; version: string; pickSession?: boolean }) {
   useSyncExternalStore(store.subscribe, store.snapshot);
-  const { exit } = useApp();
+  const { exit, suspendTerminal } = useApp();
   const { columns, rows } = useWindowSize();
   const width = Math.max(40, columns);
 
@@ -134,7 +143,10 @@ export function Screen({ app, store }: { app: App; store: Store }) {
   const [edit, setEdit] = useState<ed.Edit>(ed.EMPTY);
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuOff, setMenuOff] = useState(false); // closed with Esc until the text changes
-  const [overlay, setOverlay] = useState<Overlay | null>(null);
+  const [overlay, setOverlayRaw] = useState<Overlay | null>(null);
+  const [filter, setFilter] = useState(""); // typed into a picker that can be searched
+  const setOverlay = (o: Overlay | null) => (setFilter(""), setOverlayRaw(o));
+  const stash = useRef<string | null>(null);
   const [choice, setChoice] = useState(0); // selected row of the approval or overlay list
   const [saying, setSaying] = useState<ed.Edit | null>(null); // typing what to do instead
   const [busy, setBusy] = useState(false);
@@ -161,7 +173,21 @@ export function Screen({ app, store }: { app: App; store: Store }) {
   }, [Boolean(live.activity)]);
 
   // The most recent message is the likeliest place to go back to.
-  useEffect(() => setChoice(overlay?.type === "rewind" ? overlay.choices.length - 1 : 0), [pending, overlay?.type]);
+  useEffect(() => setChoice(overlay?.type === "rewind" ? overlay.choices.length - 1 : 0), [pending, overlay?.type, filter]);
+  const searchable = overlay?.type === "resume" || overlay?.type === "history";
+  const shownChoices: Choice<unknown>[] | null = overlay
+    ? searchable
+      ? (overlay.choices as Choice<unknown>[]).filter((c) => `${c.label} ${c.hint ?? ""}`.toLowerCase().includes(filter.toLowerCase())).slice(0, 10)
+      : (overlay.choices as Choice<unknown>[])
+    : null;
+  const openResume = () => {
+    const list = app.sessions();
+    if (!list.length) return store.note("No earlier sessions in this folder.", "dim");
+    setOverlay({ type: "resume", choices: list.map((s) => ({ label: s.first, hint: `${s.when.toLocaleString()} · ${s.turns} message${s.turns > 1 ? "s" : ""}`, value: s })) });
+  };
+  useEffect(() => {
+    if (pickSession) openResume();
+  }, []);
   useEffect(() => {
     if (pending && app.runningFor > BELL_AFTER_MS) process.stderr.write("\x07");
   }, [pending]);
@@ -244,11 +270,26 @@ export function Screen({ app, store }: { app: App; store: Store }) {
       case "clear":
         app.clear();
         return say("New conversation. The previous one is under /resume.", "dim");
-      case "resume": {
-        const list = app.sessions();
-        if (!list.length) return say("No earlier sessions in this folder.", "dim");
-        return setOverlay({ type: "resume", choices: list.map((s) => ({ label: s.first, hint: `${s.when.toLocaleString()} · ${s.turns} message${s.turns > 1 ? "s" : ""}`, value: s })) });
+      case "resume":
+        return openResume();
+      case "rename":
+        if (!arg) return say(app.name ? `This session is named "${app.name}".` : "Give a name: /rename fix the tax bug", "dim");
+        app.rename(arg);
+        refresh();
+        return say(`Session named "${app.name}".`, "dim");
+      case "export": {
+        const file = resolve(app.root, arg || `heyho-session-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.md`);
+        writeFileSync(file, app.exportText());
+        return say(`Wrote the conversation to ${file}`, "dim");
       }
+      case "copy": {
+        const last = app.lastReply();
+        if (!last) return say("No reply to copy yet.", "dim");
+        const r = spawnSync("pbcopy", { input: last });
+        return say(r.status === 0 ? "Copied the last reply to the clipboard." : "Could not reach the clipboard (pbcopy is macOS only).", r.status === 0 ? "dim" : "warn");
+      }
+      case "status":
+        return say(app.status(version).join("\n"));
       case "rewind": {
         if (!app.checkpoints.length) return say("Nothing to go back to yet.", "dim");
         return setOverlay({ type: "rewind", choices: app.checkpoints.map((c, i) => ({ label: c.text.split("\n")[0].slice(0, width - 12), value: i })) });
@@ -311,12 +352,15 @@ export function Screen({ app, store }: { app: App; store: Store }) {
     void process_(next);
   }, [busy, overlay, pending, live.queue.length]);
 
-  const pickOverlay = (o: Overlay, i: number) => {
+  const pickOverlay = (o: Overlay, picked: Choice<unknown>) => {
+    const i = (o.choices as Choice<unknown>[]).indexOf(picked);
     setOverlay(null);
     if (o.type === "resume") {
       app.resume(o.choices[i].value);
+      refresh();
       return store.note(`Reopened "${o.choices[i].label}". Your next message continues it.`, "dim");
     }
+    if (o.type === "history") return setEdit(ed.at(o.choices[i].value));
     if (o.type === "rewind") {
       const index = o.choices[i].value;
       const changed = app.changes.turnCount > app.checkpoints[index].turn;
@@ -371,6 +415,10 @@ export function Screen({ app, store }: { app: App; store: Store }) {
       return refresh();
     }
     if (key.ctrl && input === "o") return store.expandOutput();
+    if (key.ctrl && input === "l") {
+      stdout.write("\x1b[2J\x1b[3J\x1b[H");
+      return setPrinted((n) => n + 1);
+    }
 
     // Typing what to do instead of approving.
     if (saying && pending) {
@@ -388,22 +436,26 @@ export function Screen({ app, store }: { app: App; store: Store }) {
     }
 
     // A question is on the screen: an approval, or one of the pickers.
-    const choices = pending ? approvalChoices(pending.request) : overlay ? overlay.choices : null;
+    const choices: Choice<unknown>[] | null = pending ? approvalChoices(pending.request) : shownChoices;
     if (choices) {
       const pick = (i: number) => {
         if (pending) {
           const v = approvalChoices(pending.request)[i].value;
           return v === "say" ? setSaying(ed.EMPTY) : pending.resolve(v);
         }
-        pickOverlay(overlay!, i);
+        if (choices[i]) pickOverlay(overlay!, choices[i]);
       };
+      if (searchable && !pending) {
+        if (key.backspace || key.delete) return setFilter((f) => f.slice(0, -1));
+        if (input && !key.ctrl && !key.meta && !key.return && !key.tab && !key.escape && !key.upArrow && !key.downArrow) return setFilter((f) => f + input);
+      }
       if (key.escape) return pending ? pending.resolve("no") : setOverlay(null);
       if (key.upArrow) return setChoice((c) => (c + choices.length - 1) % choices.length);
       if (key.downArrow) return setChoice((c) => (c + 1) % choices.length);
       if (key.return) return pick(choice);
       if (key.tab && pending) return setSaying(ed.EMPTY);
       const n = Number(input);
-      if (input && n >= 1 && n <= choices.length && overlay?.type !== "resume" && overlay?.type !== "rewind") return pick(n - 1);
+      if (input && n >= 1 && n <= choices.length && !searchable && overlay?.type !== "rewind") return pick(n - 1);
       return;
     }
 
@@ -418,6 +470,22 @@ export function Screen({ app, store }: { app: App; store: Store }) {
       return void command("rewind", "");
     }
     if (key.ctrl && input === "d") return edit.value ? change(ed.del(edit)) : exit();
+    if (key.ctrl && input === "r") {
+      if (!history.current.length) return;
+      return setOverlay({ type: "history", choices: history.current.map((h) => ({ label: h.split("\n")[0].slice(0, width - 8), value: h })) });
+    }
+    if (key.ctrl && input === "s") {
+      // Sets the draft aside; pressed again on an empty box, brings it back.
+      if (edit.value) return (stash.current = edit.value), change(ed.EMPTY);
+      if (stash.current !== null) return change(ed.at(stash.current)), void (stash.current = null);
+      return;
+    }
+    if (key.ctrl && input === "g") {
+      const file = join(mkdtempSync(join(tmpdir(), "heyho-edit-")), "message.md");
+      writeFileSync(file, edit.value);
+      return void suspendTerminal(() => void spawnSync(process.env.VISUAL || process.env.EDITOR || "vi", [file], { stdio: "inherit", shell: true })).then(() => change(ed.at(readFileSync(file, "utf8").replace(/\n$/, ""))));
+    }
+    if (input === "?" && !edit.value) return void command("help", "");
     if (key.return) {
       if (key.meta || key.shift) return change(ed.insert(edit, "\n"));
       if (edit.value[edit.cursor - 1] === "\\" && edit.cursor === edit.value.length) return change(ed.insert(ed.backspace(edit), "\n"));
@@ -524,9 +592,11 @@ export function Screen({ app, store }: { app: App; store: Store }) {
         <Box flexDirection="column" marginTop={1}>
           <Rule width={width} />
           <Text bold>
-            {overlay.type === "resume" ? "Reopen a session" : overlay.type === "rewind" ? "Go back to before which message?" : overlay.type === "rewindWhat" ? "What should be restored?" : "Carry out this plan?"}
+            {overlay.type === "resume" ? "Reopen a session" : overlay.type === "history" ? "Earlier messages" : overlay.type === "rewind" ? "Go back to before which message?" : overlay.type === "rewindWhat" ? "What should be restored?" : "Carry out this plan?"}
           </Text>
-          <List choices={overlay.choices as Choice<unknown>[]} index={choice} numbered={overlay.type === "rewindWhat" || overlay.type === "plan"} />
+          {searchable ? <Text>{`Search: ${filter}`}<Text dimColor>{filter ? "" : "type to narrow the list"}</Text></Text> : null}
+          <List choices={shownChoices!} index={Math.min(choice, Math.max(0, shownChoices!.length - 1))} numbered={overlay.type === "rewindWhat" || overlay.type === "plan"} />
+          {shownChoices!.length ? null : <Text dimColor>  nothing matches</Text>}
           <Text dimColor>Enter to choose · Esc to cancel</Text>
         </Box>
       ) : null}
@@ -558,7 +628,7 @@ export function Screen({ app, store }: { app: App; store: Store }) {
               ))}
             </Box>
           ) : (
-            <Footer width={width} mode={app.mode} hint={exitHint ? "press ctrl+c again to quit" : `${MODE_SHORT[app.mode]} · shift+tab changes`} right={`${app.profile.model} · ${pct}% context`} />
+            <Footer width={width} mode={app.mode} hint={exitHint ? "press ctrl+c again to quit" : `${MODE_SHORT[app.mode]} · shift+tab changes`} right={`${app.name ? `${app.name} · ` : ""}${app.profile.model} · ${pct}% context`} />
           )}
         </Box>
       ) : null}

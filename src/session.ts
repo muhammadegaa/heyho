@@ -14,33 +14,54 @@ export function newSession(stateDir: string): Session {
   return { file, record: (entry) => appendFileSync(file, JSON.stringify({ t: Date.now(), ...entry }) + "\n") };
 }
 
-export function loadMessages(file: string): Message[] {
-  let messages: Message[] = [];
+// Where a turn began: enough to put the conversation and the files back to that point.
+export type Checkpoint = { text: string; messages: number; turn: number };
+export type FileEntry = { before: string | null; after: string };
+export type Loaded = { messages: Message[]; checkpoints: Checkpoint[]; turns: Map<string, FileEntry>[]; name?: string; mode?: string };
+
+// Replays a session file. Besides messages it holds: `checkpoints` (the full list, written
+// whenever it changes), `change` (one file write in a turn), `turns` (how many turns of
+// changes are left after an undo) and `name`.
+export function loadSession(file: string): Loaded {
+  const out: Loaded = { messages: [], checkpoints: [], turns: [] };
   for (const line of readFileSync(file, "utf8").split("\n")) {
     if (!line) continue;
     const { t: _t, ...entry } = JSON.parse(line);
-    if (entry.reset) messages = [];
-    else if (typeof entry.role === "string") messages.push(entry as Message);
+    if (entry.reset) out.messages = [];
+    else if (typeof entry.role === "string") out.messages.push(entry as Message);
+    else if (entry.checkpoints) out.checkpoints = entry.checkpoints;
+    else if (entry.change) {
+      while (out.turns.length <= entry.change.turn) out.turns.push(new Map());
+      const turn = out.turns[entry.change.turn];
+      turn.set(entry.change.path, { before: turn.get(entry.change.path)?.before ?? entry.change.before, after: entry.change.after });
+    } else if (typeof entry.turns === "number") out.turns.length = Math.min(out.turns.length, entry.turns);
+    else if (typeof entry.name === "string") out.name = entry.name;
+    else if (entry.meta?.mode) out.mode = entry.meta.mode;
   }
-  return messages;
+  return out;
 }
 
+export const loadMessages = (file: string): Message[] => loadSession(file).messages;
+
+// `first` is the session's name if it was given one, otherwise the start of its first message.
 export type SessionInfo = { file: string; when: Date; first: string; turns: number };
 
 // What the user typed in a session, in order: every user message in the file, including ones
 // later dropped by /compact, minus the messages heyho writes itself.
-function prompts(file: string): { texts: string[]; headless: boolean } {
+function prompts(file: string): { texts: string[]; headless: boolean; name?: string } {
   const texts: string[] = [];
   let headless = false;
+  let name: string | undefined;
   for (const line of readFileSync(file, "utf8").split("\n")) {
     if (!line) continue;
     const entry = JSON.parse(line);
     if (entry.meta?.headless) headless = true;
+    if (typeof entry.name === "string") name = entry.name;
     if (entry.role !== "user" || typeof entry.content !== "string") continue;
     if (entry.content.startsWith(NOTES_PREFIX) || entry.content === CARRY_ON) continue;
     if (!texts.includes(entry.content)) texts.push(entry.content); // a resumed session repeats its history
   }
-  return { texts, headless };
+  return { texts, headless, name };
 }
 
 // Newest first. Sessions with no user message are left out, and so are one-off headless
@@ -51,10 +72,10 @@ export function listSessions(stateDir: string, limit = 10, opts: { headless?: bo
   const out: SessionInfo[] = [];
   for (const name of readdirSync(dir).filter((n) => n.endsWith(".jsonl")).sort().reverse()) {
     const file = join(dir, name);
-    const { texts, headless } = prompts(file);
+    const { texts, headless, name: given } = prompts(file);
     if (!texts.length || (headless && !opts.headless)) continue;
     const stamp = name.slice(0, -6).replace(/T(\d\d)-(\d\d)-(\d\d)-(\d+)Z$/, "T$1:$2:$3.$4Z");
-    out.push({ file, when: new Date(stamp), first: texts[0].replace(/^\[[^\]]*\]\s*/, "").split("\n")[0].slice(0, 70), turns: texts.length });
+    out.push({ file, when: new Date(stamp), first: given ?? texts[0].replace(/^\[[^\]]*\]\s*/, "").split("\n")[0].slice(0, 70), turns: texts.length });
     if (out.length >= limit) break;
   }
   return out;
