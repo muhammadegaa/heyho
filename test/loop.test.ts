@@ -179,6 +179,35 @@ test("a stream that drops partway is retried", async () => {
   expect((messages.at(-1) as { content: string }).content).toBe("done after retry");
 }, 10_000);
 
+test("shortening still works when the conversation is already too big to send: tool results are cut and it tries again", async () => {
+  // Several large reads in one step took a real session from under the limit to 113% of it.
+  requests.length = 0;
+  script = [{ status: 400, text: '{"error":{"message":"request (74327 tokens) exceeds the available context size (65536 tokens)"}}' }, { text: "Notes: read six files." }];
+  const big = "x".repeat(40_000);
+  const before: Message[] = [{ role: "system", content: "sys" }, { role: "user", content: "task" }, { role: "tool", tool_call_id: "1", content: big }, { role: "tool", tool_call_id: "2", content: "short" }];
+  const after = await compact(profile, before, toolSchemas(TOOLS));
+  expect((after[1] as { content: string }).content).toContain("Notes: read six files.");
+  const second = requests[1].messages as { content: string }[];
+  expect(second[2].content.length).toBeLessThan(5000);
+  expect(second[2].content).toMatch(/cut to make room/);
+  expect(second[3].content).toBe("short");
+});
+
+test("notes that come back as a tool call are asked for again, and failing that the user's requests are kept", async () => {
+  // Qwen3.6, mid-task, answered the request for notes with ten read calls written as text; the task was lost.
+  const call = "<tool_call>\n<function=read>\n<parameter=path>\nsrc/app.ts\n</parameter>\n</function>\n</tool_call>";
+  const before: Message[] = [{ role: "system", content: "sys" }, { role: "user", content: "count the exports in every file" }, { role: "assistant", content: "reading" }];
+  requests.length = 0;
+  script = [{ text: call }, { text: "Notes: counted 3 files so far; 20 left." }];
+  const retried = await compact(profile, before, toolSchemas(TOOLS));
+  expect((retried[1] as { content: string }).content).toContain("counted 3 files so far");
+  expect(requests.length).toBe(2);
+  script = [{ text: call }, { text: call }];
+  const fallback = (await compact(profile, before, toolSchemas(TOOLS)))[1] as { content: string };
+  expect(fallback.content).not.toContain("<function");
+  expect(fallback.content).toContain("count the exports in every file");
+});
+
 test("a context overflow from the server ends the run as context_full", async () => {
   const { run } = setup();
   script = [{ status: 400, text: '{"error":{"message":"the request exceeds the available context size"}}' }];
