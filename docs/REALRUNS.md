@@ -47,11 +47,11 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 28 | Folder trust | cart | project settings with a hook; start; answer No, then restart and Yes | Hook is off, then on; the answer is remembered | pass. No: the hook stayed off and `/hooks` said why. Yes: the hook ran. A third start did not ask again |
 | 29 | MCP, real server | cart | `.mcp.json` with a published stdio server; `/mcp`; a task that needs one of its tools | Tools are listed; the call asks first; the result is used | defect, then pass. `@modelcontextprotocol/server-everything` over stdio: tools listed by `/mcp`, the call asked first, `echo` returned "Echo: hello heyho". The model's first call had no arguments and still asked for approval; fixed in 85b4261 |
 | 30 | MCP rule | cart | "don't ask again" for that server, call again | No second prompt | pass. After "don't ask again" for the server, a new session called `get-sum` without asking and got 42 |
-| 31 | Skill | cart | a `changelog` skill; `add a changelog entry for discount` | The model reads the skill file and follows its format | not run |
+| 31 | Skill | cart | a `changelog` skill; `add a changelog entry for discount` | The model reads the skill file and follows its format | pass. The model read `.heyho/skills/changelog/SKILL.md` first and wrote the entry in the skill's format |
 | 32 | Subagent | big | a `reviewer` agent; `have the reviewer check src/diff.ts` | Subagent lines are indented; its report comes back; it edits nothing | not run |
-| 33 | Custom command | cart | `.heyho/commands/review.md` with `$ARGUMENTS`; `/review src/cart.js` | The file is reviewed, nothing edited | not run |
-| 34 | Project instructions | cart | `AGENTS.md`: "Always run npm test after an edit"; ask for an edit | Tests are run without being asked | not run |
-| 35 | Notes across sessions | cart | `remember that the discount codes are case-sensitive`; `/clear`; `what do you know about discount codes?` | The note is written to the notes file and used in the new conversation | not run |
+| 33 | Custom command | cart | `.heyho/commands/review.md` with `$ARGUMENTS`; `/review src/cart.js` | The file is reviewed, nothing edited | pass. The command's text was sent with the file name filled in; one issue reported, nothing edited |
+| 34 | Project instructions | cart | `AGENTS.md`: "Always run npm test after an edit"; ask for an edit | Tests are run without being asked | pass. `npm test` run after the edit without being asked. Weak evidence on its own, since the model often does that anyway; a run with "Always answer in French" earlier the same day was answered in French |
+| 35 | Notes across sessions | cart | `remember that the discount codes are case-sensitive`; `/clear`; `what do you know about discount codes?` | The note is written to the notes file and used in the new conversation | defect, then pass. Asked to remember something, the model read the missing notes file, was told to search with a glob, and ran `find`, `mkdir` and `ls`, each asking for approval. Fixed in 8725f4a. Rerun: note written in 3 steps unasked, and after `/clear` the question was answered from it in 1 step with no reads |
 | 36 | Undo | cart | an edit, then `/undo` | File is back; the model is told on the next turn | not run |
 | 37 | Rewind | cart | three turns with edits; `/rewind` to the second, files and conversation | Files and conversation are back; the message is in the input | not run |
 | 38 | Compact | big | a long reading session, then `/compact`, then a follow-up question | The follow-up is answered from the notes or by rereading | not run |
@@ -82,6 +82,7 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 25 | A block by the user's hook read to the model like a refusal from the remote | 69f55f6 | `e2e/hooks.test.ts`, the two block tests |
 | 27 | A Stop hook sent the model back to work with nothing shown to the user | 85b4261 | `e2e/hooks.test.ts` "a Stop hook that exits 2 sends the model back to work, at most three times" |
 | 29 | An MCP call with no arguments asked for approval before failing | 85b4261 | `e2e/mcp.test.ts` "a call that leaves out required arguments gets the schema back without asking the user" |
+| 35 | Reading a notes file that did not exist yet sent the model searching the disk | 8725f4a | `test/tools.test.ts` "a notes file that is not there yet says to create it, not to go looking for it" |
 
 ## Model behaviour recorded
 
