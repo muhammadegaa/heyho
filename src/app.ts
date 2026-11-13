@@ -385,7 +385,9 @@ export class App {
     let result: Outcome;
     try {
       result = await agent();
-      if (result.status === "context_full") {
+      // A long task can fill the context more than once. Three times in one turn means it is
+      // going round in circles, and then the user decides.
+      for (let n = 0; result.status === "context_full" && n < 3; n++) {
         await this.shorten(abort.signal);
         this.push({ role: "user", content: CARRY_ON });
         result = await agent();

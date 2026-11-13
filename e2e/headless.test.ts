@@ -95,3 +95,11 @@ test("--max-turns stops the run like --max-steps", () => {
   expect(JSON.parse(r.out).status).toBe("step_limit");
   expect(r.code).toBe(2);
 });
+
+test("a long task is shortened more than once in one run and still finishes", () => {
+  // On the real model a second fill of the context ended the turn and told the user to type /compact.
+  const READ = { calls: [["read", { path: "greet.js" }]] as [string, object][], full: true };
+  const r = run(["--yolo", "go"], { steps: [READ, reply("Notes one: read greet.js once."), READ, reply("Notes two: read greet.js twice."), reply("Finished.\n")] });
+  expect(r.out).toContain("Finished.");
+  expect(r.err).not.toMatch(/context is full/i);
+});

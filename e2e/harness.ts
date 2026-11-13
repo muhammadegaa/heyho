@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-export type Step = { think?: string; text?: string; calls?: [string, object][]; slow?: boolean };
+export type Step = { think?: string; text?: string; calls?: [string, object][]; slow?: boolean; full?: boolean };
 
 const tmux = (...args: string[]) => spawnSync("tmux", args, { encoding: "utf8" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

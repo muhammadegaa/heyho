@@ -8,7 +8,8 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-type Step = { think?: string; text?: string; calls?: [string, object][]; slow?: boolean };
+// `full` reports a prompt near the context size, which makes heyho shorten the conversation.
+type Step = { think?: string; text?: string; calls?: [string, object][]; slow?: boolean; full?: boolean };
 const script: Step[] = [
   { think: "The user wants the greeting changed. I should read the file first, then make a small edit and run it to check. ".repeat(6), text: "Plan:\n- read `greet.js`\n- change the greeting\n- run it\n", calls: [["read", { path: "greet.js" }]] },
   { calls: [["edit", { path: "greet.js", old_string: 'const greeting = "hello";\nconsole.log(greeting + ", " + name);', new_string: 'const greeting = "good morning";\nconsole.log(`${greeting}, ${name}`);' }]] },
@@ -49,7 +50,7 @@ const server = createServer((req, res) => {
       for (const part of JSON.stringify(args).match(/.{1,20}/gs) ?? []) (send({ tool_calls: [{ index: i, function: { arguments: part } }] }), await pause(20));
     }
     send({}, s.calls ? "tool_calls" : "stop");
-    res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 9000 + 2500 * (8 - script.length), completion_tokens: 180 }, timings: { cache_n: 8800, prompt_ms: 400, predicted_per_second: 41 } })}\n\n`);
+    res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: s.full ? 60000 : 9000 + 2500 * (8 - script.length), completion_tokens: 180 }, timings: { cache_n: 8800, prompt_ms: 400, predicted_per_second: 41 } })}\n\n`);
     res.end("data: [DONE]\n\n");
   });
 });
