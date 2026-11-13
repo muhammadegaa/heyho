@@ -12,7 +12,7 @@ import { expand, loadCommands } from "../commands.ts";
 import { listFiles } from "../input.ts";
 import { heyhoHome } from "../settings.ts";
 import type { SessionInfo } from "../session.ts";
-import { changeTitle, paint, renderDiff } from "../ui.ts";
+import { changeTitle, paint, renderDiff, tidyPaths } from "../ui.ts";
 import * as ed from "./edit.ts";
 import { normalKey } from "./vim.ts";
 import { secs, type Store } from "./store.ts";
@@ -347,7 +347,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
           return say(`Stopped job ${job.id}.`, "dim");
         }
         if (!app.jobs.length) return say("No background commands in this session.", "dim");
-        return say(app.jobs.map((j) => `${j.id}  ${app.jobRunning(j) ? p.green("running") : p.dim(j.exit === undefined || j.exit === null ? "ended" : `exit ${j.exit}`)}  ${j.command.split("\n")[0].split(app.root + "/").join("").split(app.root).join(".").replace(/^cd \. && /, "").slice(0, 60)}  ${p.dim(j.log)}`).join("\n"));
+        return say(app.jobs.map((j) => `${j.id}  ${app.jobRunning(j) ? p.green("running") : p.dim(j.exit === undefined || j.exit === null ? "ended" : `exit ${j.exit}`)}  ${tidyPaths(j.command.split("\n")[0], app.root).replace(/^cd \. && /, "").slice(0, 60)}  ${p.dim(j.log)}`).join("\n"));
       }
       case "rewind": {
         if (!app.checkpoints.length) return say("Nothing to go back to yet.", "dim");
@@ -712,9 +712,9 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       {asking ? (
         <Box flexDirection="column" marginTop={1}>
           <Rule width={width} />
-          <Text bold>{asking.change ? changeTitle(asking.change) : asking.kind === "fetch" ? "Fetch a web page" : asking.kind === "mcp" ? "Use an MCP tool" : "Run a command"}</Text>
+          <Text bold>{asking.change ? changeTitle(asking.change) : asking.kind === "fetch" ? "Fetch a web page" : asking.kind === "mcp" ? "Use an MCP tool" : asking.background ? "Run a command in the background" : "Run a command"}</Text>
           <Box flexDirection="column" paddingLeft={1} marginY={1}>
-            <Text>{diff ? diff.lines.join("\n") : asking.summary.split(app.root + "/").join("").split(app.root).join(".")}</Text>
+            <Text>{diff ? diff.lines.join("\n") : tidyPaths(asking.summary, app.root)}</Text>
           </Box>
           {saying ? (
             <Box>

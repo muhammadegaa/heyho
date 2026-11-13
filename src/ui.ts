@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 // What the user sees. No dependencies: ANSI codes on stderr for everything except the
 // model's own text, which goes to stdout so `heyho "task" > file` captures only the answer.
 // Without a terminal on stderr the output is the plain line format the eval logs use.
@@ -17,6 +18,12 @@ export const paint = (on: boolean): Paint =>
 
 // A terminal that reports no width (or a tiny one) gets a normal line length.
 const columns = (out: NodeJS.WriteStream) => (out.columns && out.columns >= 20 ? out.columns : 100);
+// Paths as short as they can be shown: under the project relative to it, under the home folder with ~.
+export function tidyPaths(text: string, root: string): string {
+  const shown = root ? text.split(root + "/").join("").split(root).join(".") : text;
+  return shown.split(homedir() + "/").join("~/");
+}
+
 const oneLine = (s: string, max: number) => {
   const flat = s.replace(/\s+/g, " ").trim();
   return flat.length > max ? flat.slice(0, max - 1) + "…" : flat;

@@ -23,7 +23,7 @@ import type { RunInfo } from "./ui.ts";
 
 export type Outcome = RunResult | { status: "error"; reason: string };
 // `prefix` describes what "don't ask again" would allow, or is null when only the exact command can be.
-export type ApprovalRequest = { kind: Kind; summary: string; change?: Change; prefix: string | null };
+export type ApprovalRequest = { kind: Kind; summary: string; change?: Change; prefix: string | null; background?: boolean }; // background: the command will be left running
 // "always": every edit this session, or this exact command from now on. "prefix": commands that start the same way.
 export type ApprovalAnswer = "yes" | "always" | "prefix" | "no" | { say: string };
 
@@ -193,7 +193,7 @@ export class App {
         const rule = this.approvals.readDenied(abs);
         return rule ? `A rule set by the user forbids reading this file (${rule.text}). Do not try to read it another way.` : null;
       },
-      approve: (kind, summary, change) => this.approve(kind, summary, change),
+      approve: (kind, summary, change, background) => this.approve(kind, summary, change, background),
     };
   }
 
@@ -321,7 +321,7 @@ export class App {
     return (last?.prompt ?? 0) + (last?.completion ?? 0);
   }
 
-  private async approve(kind: Kind, summary: string, change?: Change): Promise<boolean | string> {
+  private async approve(kind: Kind, summary: string, change?: Change, background?: boolean): Promise<boolean | string> {
     const verdict = this.approvals.decide(kind, summary);
     if (verdict.action === "allow") return true;
     if (verdict.action === "deny") return `Blocked: a rule set by the user forbids this (${verdict.rule!.text}). Do not try another way to do the same thing; say that it is not allowed.`;
@@ -330,7 +330,7 @@ export class App {
     if (!this.opts.canAsk) return false;
     const suggested = kind === "bash" ? this.approvals.suggest(summary) : null;
     const prefix = kind === "mcp" ? summary.split("\n")[0].split(".")[0] : kind === "fetch" ? new URL(summary).hostname : suggested?.length ? suggested.map((p) => `${p} …`).join(", ") : null;
-    const answer = await this.front.ask({ kind, summary, change, prefix });
+    const answer = await this.front.ask({ kind, summary, change, prefix, background });
     if (typeof answer === "object") return answer.say;
     if (kind === "mcp" && (answer === "always" || answer === "prefix")) this.approvals.allowServer(prefix!);
     else if (kind === "fetch" && (answer === "always" || answer === "prefix")) this.approvals.allowHost(summary);

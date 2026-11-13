@@ -222,6 +222,13 @@ test("a session reloads its messages, starting after the last reset", async () =
   expect(listSessions(dir, 10, { headless: true }).map((x) => x.first)).toContain("one-off question");
 });
 
+test("paths are shown relative to the project, and with ~ under the home folder", async () => {
+  const { tidyPaths } = await import("../src/ui.ts");
+  const { homedir } = await import("node:os");
+  expect(tidyPaths("cd /work/repo && cat /work/repo/src/a.ts", "/work/repo")).toBe("cd . && cat src/a.ts");
+  expect(tidyPaths(`read ${homedir()}/.heyho/projects/x/memory/NOTES.md`, "/work/repo")).toBe("read ~/.heyho/projects/x/memory/NOTES.md");
+});
+
 test("a session reopened after shortening keeps its title and replaces the one it came from", async () => {
   const dir = mkdtempSync(join(tmpdir(), "heyho-state-"));
   const old = newSession(dir);

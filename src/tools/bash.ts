@@ -57,7 +57,7 @@ export const bash: Tool = {
     // With background set, a trailing "&" would let bash exit at once and leave the program untracked.
     const command = args.background === true ? String(args.command).replace(/\s*&\s*$/, "") : String(args.command);
     const timeout = Math.min(600, Math.max(1, Number(args.timeout) || 120));
-    const no = await declined(ctx, "bash", command);
+    const no = await declined(ctx, "bash", command, undefined, args.background === true);
     if (no) return no;
     const [cmd, argv] = ctx.sandbox.enabled
       ? ["/usr/bin/sandbox-exec", ["-p", seatbeltProfile(ctx.root, ctx.sandbox.noNet), "/bin/bash", "-c", command]]

@@ -846,7 +846,8 @@ test("fetching a page asks first, returns its text, and can be allowed for the h
 test("a background command shows in the footer and /tasks, can be stopped, and does not outlive heyho", async () => {
   s = await open({ args: ["--mode", "yolo-not-a-mode"].slice(2), steps: [call("bash", { command: "sleep 300", background: true }), reply("Server is up.\n")] });
   await s.send("start the server");
-  await s.wait(/Run this command\?/);
+  // The question says the command will be left running, so approving it is not expected to block.
+  expect(await s.wait(/Run this command\?/)).toMatch(/Run a command in the background/);
   await s.key("1");
   await s.wait(/Server is up\./);
   await s.wait(/1 in background/);

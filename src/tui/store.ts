@@ -3,7 +3,7 @@
 import type { ApprovalAnswer, ApprovalRequest, Outcome } from "../app.ts";
 import type { AgentEvent } from "../loop.ts";
 import type { Change, Todo } from "../tools/types.ts";
-import { Markdown, outputTail, paint, renderDiff, STOP_HELP, type RunInfo } from "../ui.ts";
+import { Markdown, outputTail, paint, renderDiff, STOP_HELP, tidyPaths, type RunInfo } from "../ui.ts";
 
 const p = paint(true);
 const kilo = (n: number) => (n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`);
@@ -76,7 +76,7 @@ export class Store {
   // What a tool was called with, as short as it can be shown.
   private arg(args: Record<string, unknown>, max: number) {
     const raw = String(args.command ?? args.path ?? args.pattern ?? args.glob ?? args.url ?? args.tool ?? "");
-    return oneLine(this.root ? raw.split(this.root + "/").join("").split(this.root).join(".") : raw, max);
+    return oneLine(tidyPaths(raw, this.root), max);
   }
 
   private activity(label: string, detail = "") {

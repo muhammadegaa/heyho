@@ -172,8 +172,11 @@ Where pass 2 was faster than pass 1, the cause was fewer approval prompts and no
 
 - Scenario 13: "don't ask again" offers a rule for every `node` command. `node -e` runs any code, the same reason `sh` was taken off that list. `python`, `ruby`, `perl`, `bun` and `deno` are the same. Taking them off changes a permission default, so it waits for a decision.
 - Scenario 19: `echo` is not on the list of commands that never ask, so `ls x || echo "none"` still asks. Adding it changes a permission default.
-- Still open, cosmetic: a `read` of the project folder itself shows the absolute path in the tool line.
 - Scenario 25: `git branch --show-current`, `git remote -v` and `git config --get` are read-only but ask. Adding them to the commands that never ask changes a permission default.
-- Still open, cosmetic: the approval for a background command does not say it will run in the background.
 - Scenario 32: asked to find bugs in a short file, Qwen3.6 thinks until the 16,384-token output limit, about 7 minutes at 40 tokens a second, and may do it twice. A cap on thinking per reply (stop the reply at, say, 4,000 thinking tokens and ask again with thinking off) would bound this at under 2 minutes. It changes how the model runs, so it needs an eval run on tasks 01, 07 and 08 before it stays. Planned as its own batch after pass 1.
 - Scenario 39: `find src -type f \( -name "*.ts" -o -name "*.tsx" \) | sort` asks for approval: the escaped brackets make it a command that can't be judged, and `sort` is not on the list of commands that never ask.
+
+## After the two passes
+
+- The approval for a background command now reads "Run a command in the background" (checked on the real model). `e2e/screen.test.ts` "a background command shows in the footer and /tasks…".
+- Paths under the home folder, such as the notes file, are shown with `~` in tool lines, approvals and `/tasks`. The long absolute paths seen in the runs were these, not paths inside the project. `test/ui.test.ts` "paths are shown relative to the project, and with ~ under the home folder".
