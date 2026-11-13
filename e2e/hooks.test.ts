@@ -60,6 +60,7 @@ test("a UserPromptSubmit hook can add context to the message, or refuse it", () 
 test("a Stop hook that exits 2 sends the model back to work, at most three times", () => {
   const once = run(["finish up"], { Stop: [{ command: "test -f done.flag || { touch done.flag; echo 'run the tests before you stop' >&2; exit 2; }" }] }, [reply("All done.\n"), reply("Tests run. Done.\n")]);
   expect(once.out).toContain("Tests run. Done.");
+  expect(once.err).toContain("A Stop hook sent the model back to work: run the tests before you stop");
   expect(once.last().findLast((m) => m.role === "user")!.content).toBe("[A hook did not accept stopping: run the tests before you stop]");
   const always = run(["finish up"], { Stop: [{ command: "echo never >&2; exit 2" }] }, Array.from({ length: 8 }, (_, i) => reply(`Try ${i}.\n`)));
   expect(always.requests().length).toBe(4);

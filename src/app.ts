@@ -394,6 +394,7 @@ export class App {
       for (let n = 0; n < STOP_HOOK_MAX && result.status === "done"; n++) {
         const stop = this.hook("Stop", { reply: this.lastReply() });
         if (stop.blocked === null) break;
+        this.front.note(`A Stop hook sent the model back to work: ${stop.blocked}`, "warn");
         this.push({ role: "user", content: `[A hook did not accept stopping: ${stop.blocked}]` });
         result = await agent();
       }

@@ -143,6 +143,10 @@ export function mcpTool(servers: McpServer[]): Tool {
       const found = tools.find((t) => t.id === String(args.tool));
       if (!found) return fail(`No MCP tool "${args.tool}". Tools: ${tools.map((t) => t.id).join(", ")}`);
       const input = args.args && typeof args.args === "object" ? (args.args as object) : {};
+      // The prompt lists tools by name only, so a model may call one bare to see what it takes.
+      const schema = found.tool.inputSchema as { required?: string[] } | undefined;
+      const missing = (schema?.required ?? []).filter((k) => !(k in input));
+      if (missing.length) return fail(`${found.id} needs: ${missing.join(", ")}. Nothing was called.\nThe tool's input schema: ${JSON.stringify(schema)}`);
       const no = await declined(ctx, "mcp", `${found.id}\n${JSON.stringify(input, null, 1)}`);
       if (no) return no;
       try {

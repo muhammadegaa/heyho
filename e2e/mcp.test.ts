@@ -41,11 +41,19 @@ test("with no servers configured there is no mcp tool and nothing about it in th
 });
 
 test("a wrong tool name lists the real ones; a failing call returns the server's message and the schema", () => {
-  const r = run(["--trust-project", "--allowed-tools", "mcp(calc)", "try"], [call("mcp", { tool: "calc.subtract", args: {} }), call("mcp", { tool: "calc.add", args: { a: "two" } }), reply("ok\n")]);
+  const r = run(["--trust-project", "--allowed-tools", "mcp(calc)", "try"], [call("mcp", { tool: "calc.subtract", args: {} }), call("mcp", { tool: "calc.add", args: { a: "two", b: 1 } }), reply("ok\n")]);
   const [unknown, bad] = r.results();
   expect(unknown).toMatch(/No MCP tool "calc\.subtract"\. Tools: calc\.add, calc\.echo/);
   expect(bad).toMatch(/a and b must be numbers/);
   expect(bad).toMatch(/"required":\["a","b"\]/);
+});
+
+test("a call that leaves out required arguments gets the schema back without asking the user", () => {
+  // Qwen3.6 was seen calling a tool with no arguments first, which cost the user an approval for nothing.
+  const r = run(["--trust-project", "add them"], [call("mcp", { tool: "calc.add" }), reply("ok\n")]);
+  expect(r.results()[0]).toMatch(/calc\.add needs: a, b/);
+  expect(r.results()[0]).toMatch(/"required":\["a","b"\]/);
+  expect(r.results()[0]).not.toMatch(/declined/);
 });
 
 test("non-text content in a result is noted, not passed on", () => {
