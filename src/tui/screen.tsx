@@ -575,7 +575,11 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
 
     // The input box. With vim keys on, Esc leaves insert mode first, and letters are commands in normal mode.
     if (app.vim) {
-      if (key.escape && vimInsert && !menuOpen) return setVimInsert(false);
+      if (key.escape && vimInsert && !menuOpen) {
+        // As in vim, the cursor steps back onto the last character typed, unless it is at the start of a line.
+        if (edit.cursor > 0 && edit.value[edit.cursor - 1] !== "\n") setEdit({ ...edit, cursor: edit.cursor - 1 });
+        return setVimInsert(false);
+      }
       if (!vimInsert && input && !key.ctrl && !key.meta && !key.return && !key.tab && !key.escape) {
         let now = edit; // several keys can arrive at once; each acts on the result of the one before
         for (const ch of input) {

@@ -964,6 +964,12 @@ test("vim keys: Esc enters normal mode, motions and deletes work, i returns to t
   await s.key("Escape");
   await s.type("dd");
   await s.wait(/describe a task/);
+  // As in vim, Esc leaves the cursor on the last character typed, so x deletes it.
+  await s.type("iabcd");
+  await s.key("Escape");
+  await s.type("x");
+  await s.wait(/› abc\s*$/m);
+  await s.type("dd");
   await s.type("ihello");
   await s.key("Enter");
   await s.wait(/› hello[\s\S]*worked for/);
