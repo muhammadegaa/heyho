@@ -3,12 +3,12 @@
 // Add --plain for the line mode. Three messages walk through: thinking, an edit with a diff, a command, a new file,
 // a failing command, and a reply in markdown. Extra arguments go to heyho (e.g. --mode auto).
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-type Step = { think?: string; text?: string; calls?: [string, object][] };
+type Step = { think?: string; text?: string; calls?: [string, object][]; slow?: boolean };
 const script: Step[] = [
   { think: "The user wants the greeting changed. I should read the file first, then make a small edit and run it to check. ".repeat(6), text: "Plan:\n- read `greet.js`\n- change the greeting\n- run it\n", calls: [["read", { path: "greet.js" }]] },
   { calls: [["edit", { path: "greet.js", old_string: 'const greeting = "hello";\nconsole.log(greeting + ", " + name);', new_string: 'const greeting = "good morning";\nconsole.log(`${greeting}, ${name}`);' }]] },
@@ -20,7 +20,12 @@ const script: Step[] = [
   { text: "That was the last scripted reply. `/undo` takes back the last change, `/help` lists the commands, `/exit` quits.\n" },
 ];
 
-const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// The UI tests supply their own replies and timing: DEMO_STEPS is a JSON file of steps,
+// DEMO_ROOT the project folder to use, DEMO_FAST=1 drops the pauses.
+if (process.env.DEMO_STEPS) script.splice(0, script.length, ...JSON.parse(readFileSync(process.env.DEMO_STEPS, "utf8")));
+const speed = process.env.DEMO_FAST ? 0.05 : 1;
+
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms * speed));
 const server = createServer((req, res) => {
   if (req.method !== "POST") return res.writeHead(404).end();
   req.resume();
@@ -30,7 +35,7 @@ const server = createServer((req, res) => {
     const send = (delta: object, finish?: string) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
     await pause(1500);
     for (const part of s.think?.match(/.{1,12}/gs) ?? []) (send({ reasoning_content: part }), await pause(40));
-    for (const part of s.text?.match(/.{1,6}/gs) ?? []) (send({ content: part }), await pause(25));
+    for (const part of s.text?.match(/.{1,6}/gs) ?? []) (send({ content: part }), await pause(s.slow ? 2000 : 25));
     for (const [i, [name, args]] of (s.calls ?? []).entries()) {
       send({ tool_calls: [{ index: i, id: `c${i}`, type: "function", function: { name, arguments: "" } }] });
       for (const part of JSON.stringify(args).match(/.{1,20}/gs) ?? []) (send({ tool_calls: [{ index: i, function: { arguments: part } }] }), await pause(20));
@@ -42,8 +47,8 @@ const server = createServer((req, res) => {
 });
 
 server.listen(0, "127.0.0.1", () => {
-  const root = mkdtempSync(join(tmpdir(), "heyho-demo-"));
-  writeFileSync(join(root, "greet.js"), 'const name = "world";\nconst greeting = "hello";\nconsole.log(greeting + ", " + name);\n');
+  const root = process.env.DEMO_ROOT ?? mkdtempSync(join(tmpdir(), "heyho-demo-"));
+  if (!process.env.DEMO_ROOT) writeFileSync(join(root, "greet.js"), 'const name = "world";\nconst greeting = "hello";\nconsole.log(greeting + ", " + name);\n');
   const port = (server.address() as { port: number }).port;
   const child = spawn(process.execPath, [join(import.meta.dirname, "../src/cli.ts"), "--base-url", `http://127.0.0.1:${port}/v1`, "--cwd", root, ...process.argv.slice(2)], {
     stdio: "inherit",

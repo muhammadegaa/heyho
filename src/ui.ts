@@ -22,11 +22,15 @@ const oneLine = (s: string, max: number) => {
 const secs = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`);
 const kilo = (n: number) => (n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`);
 
+const stripInline = (t: string) => t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
+
 // Renders the model's markdown one whole line at a time. A partial line is held back until
-// its newline arrives, because a line can't be restyled once it is on the screen.
+// its newline arrives, because a line can't be restyled once it is on the screen. Table rows
+// are held until the table ends, so its columns can be lined up.
 export class Markdown {
   private buf = "";
   private fence = false;
+  private table: string[] = [];
   private p: Paint;
   constructor(p: Paint) {
     this.p = p;
@@ -35,7 +39,7 @@ export class Markdown {
     this.buf += chunk;
     let out = "";
     for (let nl = this.buf.indexOf("\n"); nl >= 0; nl = this.buf.indexOf("\n")) {
-      out += this.line(this.buf.slice(0, nl)) + "\n";
+      out += this.take(this.buf.slice(0, nl));
       this.buf = this.buf.slice(nl + 1);
     }
     return out;
@@ -43,29 +47,62 @@ export class Markdown {
   flush(): string {
     const rest = this.buf;
     this.buf = "";
+    const out = (rest ? this.take(rest) : "") + this.endTable();
     this.fence = false;
-    return rest ? this.line(rest) + "\n" : "";
+    return out;
   }
   get pending() {
-    return this.buf.length > 0;
+    return this.buf.length > 0 || this.table.length > 0;
   }
   // The unfinished line as typed so far, for showing while it is still being written.
   get raw() {
-    return this.buf;
+    return [...this.table, this.buf].filter(Boolean).join("\n");
   }
-  private line(l: string): string {
-    const { dim, bold, cyan } = this.p;
-    if (/^\s*```/.test(l)) {
+
+  private take(l: string): string {
+    if (!this.fence && /^\s*\|.*\|\s*$/.test(l)) {
+      this.table.push(l);
+      return "";
+    }
+    const line = this.line(l);
+    return this.endTable() + (line === null ? "" : line + "\n");
+  }
+
+  private endTable(): string {
+    if (!this.table.length) return "";
+    const rows = this.table.map((r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+    this.table = [];
+    const body = rows.filter((r) => !r.every((c) => /^:?-{2,}:?$/.test(c)));
+    const cols = Math.max(...body.map((r) => r.length));
+    const width = Array.from({ length: cols }, (_, c) => Math.max(...body.map((r) => stripInline(r[c] ?? "").length)));
+    const draw = (r: string[], style: (t: string) => string) => r.map((cell, c) => style(this.inline(cell)) + " ".repeat(width[c] - stripInline(cell).length)).join("   ").trimEnd();
+    const [head, ...rest] = body;
+    return [draw(head, this.p.bold), this.p.dim(width.map((w) => "─".repeat(w)).join("   ")), ...rest.map((r) => draw(r, (t) => t))].join("\n") + "\n";
+  }
+
+  private inline(t: string): string {
+    const { bold, cyan, dim } = this.p;
+    return t
+      .replace(/`([^`]+)`/g, (_, c) => cyan(c))
+      .replace(/\*\*([^*]+)\*\*/g, (_, c) => bold(c))
+      .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, (_, lead, c) => `${lead}\x1b[3m${c}\x1b[23m`)
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => `${text} ${dim(`(${url})`)}`);
+  }
+
+  // null means the line is markup only and prints nothing.
+  private line(l: string): string | null {
+    const { dim, bold } = this.p;
+    const fence = l.match(/^\s*```\s*(\S*)/);
+    if (fence) {
       this.fence = !this.fence;
-      return dim(l);
+      return this.fence && fence[1] ? dim(fence[1]) : null;
     }
     if (this.fence) return dim("│ ") + l;
     const heading = l.match(/^#{1,6}\s+(.*)$/);
     if (heading) return bold(heading[1].replace(/\*\*/g, ""));
-    return l
-      .replace(/^(\s*)[-*]\s+/, "$1• ")
-      .replace(/\*\*([^*]+)\*\*/g, (_, t) => bold(t))
-      .replace(/`([^`]+)`/g, (_, t) => cyan(t));
+    const quote = l.match(/^\s*>\s?(.*)$/);
+    if (quote) return dim("│ " + stripInline(quote[1]));
+    return this.inline(l.replace(/^(\s*)[-*]\s+/, "$1• "));
   }
 }
 

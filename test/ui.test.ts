@@ -13,9 +13,23 @@ test("markdown is rendered a whole line at a time", () => {
   const md = new Markdown(plain);
   expect(md.push("## Ti")).toBe("");
   expect(md.pending).toBe(true);
-  expect(md.push("tle\n- one\n```js\nconst a = `x`;\n```\nlast")).toBe("Title\n• one\n```js\n│ const a = `x`;\n```\n");
+  expect(md.push("tle\n- one\n```js\nconst a = `x`;\n```\nlast")).toBe("Title\n• one\njs\n│ const a = `x`;\n");
   expect(md.flush()).toBe("last\n");
   expect(md.pending).toBe(false);
+});
+
+test("a table is held until it ends, then printed with its columns lined up", () => {
+  const md = new Markdown(plain);
+  expect(md.push("| File | Lines |\n|---|---|\n| `src/cart.js` | 15 |\n")).toBe("");
+  expect(md.pending).toBe(true);
+  expect(md.push("| b.js | 3 |\n\nAfter.\n")).toBe("File          Lines\n───────────   ─────\nsrc/cart.js   15\nb.js          3\n\nAfter.\n");
+  expect(md.push("| a | b |\n| 1 | 2 |")).toBe("");
+  expect(md.flush()).toBe("a   b\n─   ─\n1   2\n");
+});
+
+test("quotes, links and italics lose their markup", () => {
+  const md = new Markdown(plain);
+  expect(md.push("> a note\nSee [docs](https://x.io) now.\n")).toBe("│ a note\nSee docs (https://x.io) now.\n");
 });
 
 test("a diff is shown with line numbers, and a long one is cut with a count", () => {

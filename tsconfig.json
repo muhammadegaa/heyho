@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node", "bun"]
   },
-  "include": ["src", "test", "eval/*.ts"]
+  "include": ["src", "test", "e2e", "eval/*.ts"]
 }

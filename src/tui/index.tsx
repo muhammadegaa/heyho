@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { render } from "ink";
 import { App, type AppOptions } from "../app.ts";
 import { Screen } from "./screen.tsx";
@@ -14,8 +15,8 @@ export async function runTui(opts: AppOptions, version: string) {
   });
   store.root = app.root;
   await app.start();
-  store.add(" ", `\x1b[1mheyho\x1b[0m \x1b[2mv${version} · ${app.profile.model} on ${app.server} · ${app.contextSize} tokens of context\n${app.root}\x1b[0m`);
+  store.add(" ", `\x1b[1mheyho\x1b[0m \x1b[2mv${version} · ${app.profile.model} on ${app.server} · ${app.contextSize} tokens of context\n${app.root.replace(homedir(), "~")}\x1b[0m`);
   if (app.resumed) store.note(`Continuing the session from ${app.resumed.when.toLocaleString()}: "${app.resumed.first}"`, "dim");
-  const ink = render(<Screen app={app} store={store} version={version} />, { exitOnCtrlC: false, patchConsole: false });
+  const ink = render(<Screen app={app} store={store} />, { exitOnCtrlC: false, patchConsole: false });
   await ink.waitUntilExit();
 }

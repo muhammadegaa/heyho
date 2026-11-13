@@ -32,6 +32,8 @@ The Ink screen (branch `ui`, after d2aab3c) changed the rows below. Each was che
 | History | Kept per project |
 | Defects 1–9 | Fixed, except 8 in part: `--continue` now skips headless runs |
 
+The first hands-on try of this screen failed at once: resizing the window left stale lines and lost the header. It had been checked by hand in one window size only. The screen now has its own test suite (`bun run test:ui`, 41 cases) that drives it in tmux. Writing it found that bug and two more: Ctrl+C during an approval left the run stuck, and the footer wrapped at some widths. Tables, quotes and links in replies were also printed as raw markdown and are now drawn. The suite runs in tmux only; other terminal programs are not covered.
+
 Still open from section 13: checkpoints on disk, session names, deny rules and a settings file, the tools in group E, instruction files beyond the root, and everything in group G. Also not done in the new screen: Ctrl+R history search, editing the prompt in `$EDITOR`, vim keys, tables in markdown, and syntax highlighting.
 
 ## 1. What was run, step by step

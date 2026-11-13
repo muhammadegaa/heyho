@@ -86,7 +86,7 @@ export class Store {
   // Ends the reply in progress: whatever is left of the last line is printed.
   private endReply() {
     const rest = this.md.flush();
-    if (rest) this.replyLine(rest.replace(/\n$/, ""));
+    if (rest) for (const line of rest.replace(/\n$/, "").split("\n")) this.replyLine(line);
     this.live.partial = "";
     this.replyStarted = false;
   }
@@ -127,7 +127,7 @@ export class Store {
         this.endThinking();
         this.live.activity = null;
         const whole = this.md.push(e.text);
-        for (const line of whole.split("\n").slice(0, -1)) this.replyLine(line);
+        if (whole) for (const line of whole.replace(/\n$/, "").split("\n")) this.replyLine(line);
         this.live.partial = this.md.raw;
         break;
       }
@@ -193,7 +193,7 @@ export class Store {
     if (info.changes.length)
       parts.push(`${p.dim(`changed ${info.changes.length} file${info.changes.length > 1 ? "s" : ""}:`)} ${info.changes.map((c) => `${c.path} ${p.green(`+${c.added}`)}${c.removed ? p.red(` −${c.removed}`) : ""}`).join(p.dim(", "))}`);
     parts.push(p.dim([`worked for ${secs(info.wallMs)}`, `${info.steps} step${info.steps === 1 ? "" : "s"}`, info.tps ? `${info.tps.toFixed(0)} tok/s` : ""].filter(Boolean).join(" · ")));
-    this.add(" ", parts.join("\n"));
+    this.add(" ", parts.join("\n"), true);
   }
 
   ask = (request: ApprovalRequest): Promise<ApprovalAnswer> =>

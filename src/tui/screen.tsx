@@ -2,7 +2,7 @@
 // progress, any question for the user, the input box and a footer.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Box, Static, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
+import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from "ink";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { INIT_TASK, type App, type ApprovalAnswer, type ApprovalRequest } from "../app.ts";
 import { MODE_HELP, MODES, type Mode } from "../approve.ts";
@@ -75,6 +75,23 @@ function List<T>({ choices, index, numbered = true }: { choices: Choice<T>[]; in
   );
 }
 
+// One line whatever the width: the right side goes first when there is no room, then the hint is cut.
+function Footer({ width, mode, hint, right }: { width: number; mode: Mode; hint: string; right: string }) {
+  const label = `  ${MODE_LABEL[mode]}`;
+  const showRight = label.length + 3 + hint.length + 2 + right.length + 1 <= width;
+  const room = width - label.length - 3 - (showRight ? right.length + 3 : 0);
+  const shown = hint.length <= room ? hint : room > 8 ? hint.slice(0, room - 1) + "…" : "";
+  return (
+    <Box justifyContent="space-between" width={width}>
+      <Text color={mode === "ask" ? undefined : mode === "plan" ? "blue" : "yellow"} wrap="truncate-end">
+        {label}
+        <Text dimColor>{shown ? ` · ${shown}` : ""}</Text>
+      </Text>
+      {showRight ? <Text dimColor>{`${right} `}</Text> : null}
+    </Box>
+  );
+}
+
 const Rule = ({ width }: { width: number }) => <Text dimColor>{"─".repeat(Math.max(10, width))}</Text>;
 
 // The text with the cursor drawn in it. An empty box shows a hint instead.
@@ -92,11 +109,27 @@ function InputText({ edit, active, hint }: { edit: ed.Edit; active: boolean; hin
   return <Text>{value.slice(0, cursor) + (active ? `\x1b[7m${under}\x1b[27m` : under) + after}</Text>;
 }
 
-export function Screen({ app, store, version }: { app: App; store: Store; version: string }) {
+export function Screen({ app, store }: { app: App; store: Store }) {
   useSyncExternalStore(store.subscribe, store.snapshot);
   const { exit } = useApp();
   const { columns, rows } = useWindowSize();
   const width = Math.max(40, columns);
+
+  // When the width changes the terminal re-wraps everything already printed, and the rows
+  // Ink would erase are no longer where it thinks. So wipe the screen and its scrollback and
+  // print the transcript again at the new width. Waits for the drag to settle.
+  const { stdout } = useStdout();
+  const [printed, setPrinted] = useState(0);
+  const lastWidth = useRef(columns);
+  useEffect(() => {
+    if (columns === lastWidth.current) return;
+    const timer = setTimeout(() => {
+      lastWidth.current = columns;
+      stdout.write("\x1b[2J\x1b[3J\x1b[H");
+      setPrinted((n) => n + 1);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [columns]);
 
   const [edit, setEdit] = useState<ed.Edit>(ed.EMPTY);
   const [menuIndex, setMenuIndex] = useState(0);
@@ -320,7 +353,12 @@ export function Screen({ app, store, version }: { app: App; store: Store; versio
   useInput((input, key) => {
     // Works everywhere.
     if (key.ctrl && input === "c") {
-      if (busy) return app.interrupt();
+      if (busy) {
+        // The tool waiting on the answer has to hear one, or the run never ends.
+        app.interrupt();
+        setSaying(null);
+        return pending?.resolve("no");
+      }
       if (!pending && !overlay && edit.value) return change(ed.EMPTY);
       if (Date.now() - lastCtrlC.current < DOUBLE_PRESS_MS * 2) return exit();
       lastCtrlC.current = Date.now();
@@ -433,7 +471,7 @@ export function Screen({ app, store, version }: { app: App; store: Store; versio
 
   return (
     <Box flexDirection="column">
-      <Static items={store.items}>
+      <Static key={printed} items={store.items}>
         {(item) => (
           <Box key={item.id} marginTop={item.gap ? 1 : 0} width={width}>
             <Box width={2} flexShrink={0}>
@@ -520,13 +558,7 @@ export function Screen({ app, store, version }: { app: App; store: Store; versio
               ))}
             </Box>
           ) : (
-            <Box justifyContent="space-between" width={width}>
-              <Text color={app.mode === "ask" ? undefined : app.mode === "plan" ? "blue" : "yellow"}>
-                {`  ${MODE_LABEL[app.mode]}`}
-                <Text dimColor>{exitHint ? " · press ctrl+c again to quit" : ` · ${MODE_SHORT[app.mode]} · shift+tab changes`}</Text>
-              </Text>
-              <Text dimColor>{`${app.profile.model} · ${pct}% context · v${version} `}</Text>
-            </Box>
+            <Footer width={width} mode={app.mode} hint={exitHint ? "press ctrl+c again to quit" : `${MODE_SHORT[app.mode]} · shift+tab changes`} right={`${app.profile.model} · ${pct}% context`} />
           )}
         </Box>
       ) : null}

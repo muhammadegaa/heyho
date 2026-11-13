@@ -18,6 +18,8 @@ bun src/cli.ts --cwd path/to/repo --yolo "fix the failing test"    # no prompts,
 
 In a session there is an input box at the bottom and the work scrolls above it. heyho shows what the model is doing while you wait, a numbered diff before every edit, and a menu to answer with one key: yes, yes and don't ask again, or say what to do instead. Shift+Tab switches between `ask`, `auto` (edits don't ask) and `plan` (read-only; it proposes a plan and asks before carrying it out). `/` opens the command menu, `@` completes file paths, `!` runs a shell command yourself. `/rewind` goes back to an earlier message and restores files, the conversation or both; `/resume` and `--continue` reopen earlier sessions. `--plain` gives a line-at-a-time session with no input box. `bun scripts/ui-demo.ts` plays a scripted session with no model, to see the screen.
 
+Tests: `bun run test` for the units, and `bun run test:ui` to drive the real screen in tmux against a scripted server (start-up, resizing, small windows, approvals, modes, menus, paste, interrupts, rewind). Run both before merging anything that touches `src/tui` or `src/app.ts`.
+
 The eval: `bun eval/run.ts --profile qwen3-coder --tasks smoke` (or `all`, or task ids; `--harness pi` runs the same tasks through Pi).
 
 Built and measured on a MacBook Pro M1 Max with 64 GB, targeting Qwen3.6-35B-A3B at Q4 with a 64k context.
