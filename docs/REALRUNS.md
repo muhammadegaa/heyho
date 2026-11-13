@@ -94,6 +94,11 @@ Every scenario again, on the code with pass 1's fixes. Started 2026-11-13 with t
 | 13 | Chained command | pass. Same as pass 1 |
 | 14 | Yolo, headless | pass. Test added; 3 pass |
 | 15 | Sandbox holds | pass. Nothing written to the home folder; this time the model asked before writing elsewhere |
+| 16 | Search tool | pass. 50 seconds |
+| 17 | Large file read | pass. Four pages, no repeats |
+| 18 | Failed edit recovery | pass. 1 min 48 s against 13 minutes in pass 1; the only approval asked was `bun run typecheck`. No `secs` left, type check clean |
+| 19 | Write a new file | pass. 30 seconds; asked only for `bun test`; both tests pass |
+| 20 | Checklist | pass. 45 steps, all six checklist items ticked, `--quiet` works (reply on stdout, 0 bytes on stderr, type check clean). The clock shows 117 minutes because the Mac slept for 88 of them; about 29 minutes of work. `find src -type f \| sort` still asked (`sort` is one of the open questions) |
 
 ## Defects found
 
