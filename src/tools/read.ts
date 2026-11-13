@@ -57,6 +57,6 @@ export const read: Tool = {
     ctx.seen.set(abs, stamp(abs));
     const footer =
       total === 0 ? "[empty file]" : end < total ? `[lines ${start}-${end} of ${total}; continue with offset=${end + 1}]` : `[end of file, ${total} lines]`;
-    return ok(`${rel(ctx, abs)}\n${out}${footer}`);
+    return ok(`${rel(ctx, abs)}\n${out}${footer}${ctx.readExtra?.(abs) ?? ""}`);
   },
 };

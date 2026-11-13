@@ -15,7 +15,7 @@ export const write: Tool = {
     required: ["path", "content"],
   },
   async run(args, ctx) {
-    const abs = resolvePath(ctx, String(args.path));
+    const abs = resolvePath(ctx, String(args.path), { allowNotes: true });
     const shown = rel(ctx, abs);
     const content = String(args.content);
     const exists = existsSync(abs);
@@ -26,7 +26,7 @@ export const write: Tool = {
     const lines = content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
     const preview = content.split("\n").slice(0, 20).join("\n");
     const before = exists ? readFileSync(abs, "utf8") : null;
-    const no = await declined(ctx, "write", `${shown} (${exists ? "overwrite" : "new file"}, ${lines} lines)\n${preview}`, { path: shown, before, after: content });
+    const no = abs === ctx.notesFile ? null : await declined(ctx, "write", `${shown} (${exists ? "overwrite" : "new file"}, ${lines} lines)\n${preview}`, { path: shown, before, after: content });
     if (no) return no;
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content);

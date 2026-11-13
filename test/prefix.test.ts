@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { chat, probeContext } from "../src/model.ts";
 import { systemPrompt } from "../src/prompt.ts";
@@ -11,7 +14,7 @@ const BUDGET = 1500;
 
 test.skipIf(!live)(`fixed prefix is at most ${BUDGET} tokens`, async () => {
   const messages = [
-    { role: "system" as const, content: systemPrompt(process.cwd(), new Date("2026-01-01")) },
+    { role: "system" as const, content: systemPrompt(mkdtempSync(join(tmpdir(), "heyho-test-")), new Date("2026-01-01")) },
     { role: "user" as const, content: "hi" },
   ];
   const reply = await chat({ baseUrl, model: "any", maxTokens: 1 }, messages, toolSchemas(TOOLS));

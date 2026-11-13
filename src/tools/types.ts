@@ -9,6 +9,8 @@ export type ToolContext = {
   approve: (kind: "edit" | "write" | "bash", summary: string, change?: Change) => Promise<boolean | string>;
   onChange?: (abs: string, before: string | null, after: string) => void; // a file was written
   onOutput?: (chunk: string) => void; // live output of a running command
+  notesFile?: string; // the one file outside the workspace the agent may write, unasked
+  readExtra?: (abs: string) => string; // text to add the first time a file in some folder is read
   readDenied?: (abs: string) => string | null; // why this file may not be read, if a rule says so
   sandbox: { enabled: boolean; noNet: boolean };
   outCount: { n: number };
@@ -56,8 +58,9 @@ const lexists = (p: string) => {
 // following symlinks). For a path that doesn't exist yet, the nearest existing parent
 // is resolved instead. A symlink whose target is missing is refused: writing through it
 // would create the target, wherever it points.
-export function resolvePath(ctx: ToolContext, p: string, opts: { allowState?: boolean } = {}): string {
+export function resolvePath(ctx: ToolContext, p: string, opts: { allowState?: boolean; allowNotes?: boolean } = {}): string {
   const abs = resolve(ctx.root, p);
+  if (opts.allowNotes && ctx.notesFile && abs === ctx.notesFile) return abs;
   let existing = abs;
   while (!lexists(existing)) existing = dirname(existing);
   if (!existsSync(existing)) throw new Error(`${p} is a symlink to a missing file. Use a path inside the working directory.`);

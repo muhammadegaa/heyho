@@ -96,7 +96,7 @@ export const edit: Tool = {
     required: ["path", "old_string", "new_string"],
   },
   async run(args, ctx) {
-    const abs = resolvePath(ctx, String(args.path));
+    const abs = resolvePath(ctx, String(args.path), { allowNotes: true });
     const shown = rel(ctx, abs);
     if (!existsSync(abs)) return fail(`${shown} does not exist. Use write to create it.`);
     // An unread file can be edited: old_string must match it exactly anyway. A file read
@@ -128,7 +128,7 @@ export const edit: Tool = {
     const [s0, e0] = ranges[0];
     const diff = summarize(text.slice(s0, e0), replacement, lineOf(text, s0));
     const final = crlf ? out.replace(/\n/g, "\r\n") : out;
-    const no = await declined(ctx, "edit", `${shown}\n${diff}`, { path: shown, before: raw, after: final });
+    const no = abs === ctx.notesFile ? null : await declined(ctx, "edit", `${shown}\n${diff}`, { path: shown, before: raw, after: final });
     if (no) return no;
     writeFileSync(abs, final);
     ctx.onChange?.(abs, raw, final);

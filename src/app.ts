@@ -12,7 +12,7 @@ import { CARRY_ON, compact } from "./compact.ts";
 import { newStats, runAgent, type AgentEvent, type RunResult, type Stats } from "./loop.ts";
 import { probeContext, type Message, type Profile } from "./model.ts";
 import { loadProfile } from "./profiles.ts";
-import { systemPrompt } from "./prompt.ts";
+import { folderInstructions, instructions, systemPrompt } from "./prompt.ts";
 import { listSessions, loadSession, newSession, type Checkpoint, type Loaded, type Session, type SessionInfo } from "./session.ts";
 import { TOOLS, toolSchemas } from "./tools/index.ts";
 import type { Change, ToolContext } from "./tools/types.ts";
@@ -69,6 +69,18 @@ export class App {
   resumed?: SessionInfo;
   running: AbortController | null = null;
   problems: string[] = []; // settings that could not be used, to show at start
+  private folderNotes = new Set<string>(); // subfolder instruction files already given to the model
+  get notesFile() {
+    return this.ctx.notesFile!;
+  }
+  private firstMessage(): Message {
+    this.folderNotes.clear();
+    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile) };
+  }
+  // The instruction files in effect, for /memory.
+  instructionFiles() {
+    return instructions(this.root, this.notesFile).files;
+  }
   private ctx: ToolContext;
   private note = ""; // told to the model at the start of the next user message
   private toldPlan = false;
@@ -95,11 +107,16 @@ export class App {
       sandbox: { enabled: opts.mode === "yolo", noNet: opts.noNet },
       outCount: { n: 0 },
       onChange: (abs, before, after) => {
-        this.changes.record(abs, before, after);
-        this.session.record({ change: { turn: this.changes.turnCount - 1, path: abs, before, after } });
+        // The notes file is the agent's own; it is not part of the project's changes to undo.
+        if (abs !== this.ctx.notesFile) {
+          this.changes.record(abs, before, after);
+          this.session.record({ change: { turn: this.changes.turnCount - 1, path: abs, before, after } });
+        }
         front.changed?.({ path: abs.startsWith(this.root + "/") ? abs.slice(this.root.length + 1) : abs, before, after });
       },
       onOutput: (chunk) => front.output?.(chunk),
+      notesFile: join(this.stateDir, "memory", "NOTES.md"),
+      readExtra: (abs) => folderInstructions(this.root, abs, this.folderNotes),
       readDenied: (abs) => {
         const rule = this.approvals.readDenied(abs);
         return rule ? `A rule set by the user forbids reading this file (${rule.text}). Do not try to read it another way.` : null;
@@ -114,7 +131,7 @@ export class App {
     this.resumed = this.opts.resume ? listSessions(this.stateDir, 1)[0] : undefined;
     if (this.opts.resume && !this.resumed) throw new Error("There is no earlier session in this directory to continue.");
     if (this.resumed) this.restore(loadSession(this.resumed.file));
-    else this.open([{ role: "system", content: systemPrompt(this.root) }], true);
+    else this.open([this.firstMessage()], true);
   }
 
   // Opens a new session file that carries on an earlier one: its conversation, the points
@@ -272,7 +289,7 @@ export class App {
   }
 
   clear() {
-    this.open([{ role: "system", content: systemPrompt(this.root) }], true);
+    this.open([this.firstMessage()], true);
     this.ctx.seen.clear();
     this.checkpoints.length = 0;
     this.changes.load([]);

@@ -2,13 +2,14 @@
 // progress, any question for the user, the input box and a footer.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from "ink";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { INIT_TASK, type App, type ApprovalAnswer, type ApprovalRequest } from "../app.ts";
 import { MODE_HELP, MODES, type Mode } from "../approve.ts";
 import { listFiles } from "../input.ts";
+import { heyhoHome } from "../settings.ts";
 import type { SessionInfo } from "../session.ts";
 import { changeTitle, paint, renderDiff } from "../ui.ts";
 import * as ed from "./edit.ts";
@@ -37,6 +38,7 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["mode", "[ask|auto|plan|dontask|yolo]", "show or set the mode"],
   ["permissions", "[allow|ask|deny|remove <rule>] [reset]", "rules for what runs without asking, asks, or is refused"],
   ["init", "", "have the model write AGENTS.md for this project"],
+  ["memory", "[edit user|project|local|notes]", "the instruction files in effect; edit opens one in $EDITOR"],
   ["model", "[profile]", "show or switch the model profile"],
   ["exit", "", "quit"],
 ];
@@ -323,6 +325,24 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       }
       case "init":
         return runTask(INIT_TASK, "/init");
+      case "memory": {
+        const [verb, which] = arg.split(/\s+/);
+        if (verb === "edit") {
+          const targets: Record<string, string> = { user: join(heyhoHome(), "AGENTS.md"), project: join(app.root, "AGENTS.md"), local: join(app.root, "AGENTS.local.md"), notes: app.notesFile };
+          const file = targets[which];
+          if (!file) return say("Which one? /memory edit user, project, local or notes", "warn");
+          mkdirSync(join(file, ".."), { recursive: true });
+          if (!existsSync(file)) writeFileSync(file, "");
+          await suspendTerminal(() => void spawnSync(process.env.VISUAL || process.env.EDITOR || "vi", [file], { stdio: "inherit", shell: true }));
+          return say(`Saved ${file}. It takes effect in the next conversation (/clear, or a new session).`, "dim");
+        }
+        const files = app.instructionFiles();
+        const names = { user: "yours, every project", parent: "a folder above", project: "this project", local: "yours, this project", notes: "kept by heyho" };
+        return say(
+          (files.length ? files.map((f) => `${f.file.startsWith(app.root + "/") ? f.file.slice(app.root.length + 1) : f.file.replace(homedir(), "~")}  ${p.dim(`${names[f.scope]} · ${f.chars} characters${f.cut ? ", cut to fit" : ""}`)}`).join("\n") : "No instruction files are in effect.") +
+            `\n${p.dim(`Looked for: ${join(heyhoHome(), "AGENTS.md")}, AGENTS.md or CLAUDE.md here and in folders above, AGENTS.local.md, and notes at ${app.notesFile}.\nFiles in folders below are added when a file there is first read. /memory edit <which> opens one.`)}`,
+        );
+      }
       case "model": {
         const problem = arg ? await app.switchModel(arg) : null;
         return say(problem ?? app.banner(), problem ? "error" : "dim");

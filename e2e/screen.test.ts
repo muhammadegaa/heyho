@@ -694,3 +694,48 @@ test("a settings file that is not valid JSON is reported, not fatal", async () =
   s = await open({ files: { ...FILES, ".heyho/settings.json": "{ oops" } });
   expect(s.screen()).toMatch(/not valid JSON and was ignored/);
 });
+
+// ---- instruction files and notes ----
+
+test("/memory lists the instruction files in effect, and the model receives them", async () => {
+  s = await open({ files: { ...FILES, "AGENTS.md": "Always answer in French.\n", "AGENTS.local.md": "private\n" }, steps: [reply("Bonjour.\n")] });
+  await s.send("/memory");
+  const listed = await s.wait(/AGENTS\.md\s+this project/);
+  expect(listed).toMatch(/AGENTS\.local\.md\s+yours, this project/);
+  await s.send("hello");
+  await s.wait(/worked for/);
+  const session = readFileSync(join(s.home, "projects", readdirSync(join(s.home, "projects"))[0], "sessions", readdirSync(join(s.home, "projects", readdirSync(join(s.home, "projects"))[0], "sessions"))[0]), "utf8");
+  expect(session).toContain("Always answer in French.");
+});
+
+test("the agent can write its notes file without being asked, and the next session has them", async () => {
+  s = await open({ steps: [reply("ok\n")] });
+  await s.send("/status");
+  await s.wait(/folder:/);
+  const notes = join(s.home, "projects", readdirSync(join(s.home, "projects"))[0], "memory", "NOTES.md");
+  const root = s.root;
+  s.close();
+  s = await open({ root, steps: [call("write", { path: notes, content: "Tests run with npm test.\n" }), reply("Noted.\n")] });
+  await s.send("remember how tests run");
+  const screen = await s.wait(/worked for/);
+  expect(screen).not.toMatch(/Create this file\?/);
+  expect(readFileSync(notes, "utf8")).toBe("Tests run with npm test.\n");
+  await s.send("/clear");
+  await s.send("/memory");
+  await s.wait(/NOTES\.md\s+kept by heyho/);
+});
+
+test("a subfolder's AGENTS.md is given to the model when a file under it is first read", async () => {
+  s = await open({ files: { ...FILES, "src/AGENTS.md": "In src, never use var.\n" }, steps: [call("read", { path: "src/cart.js" }), reply("Read it.\n")] });
+  await s.send("read the cart");
+  await s.wait(/worked for/);
+  const dir = join(s.home, "projects", readdirSync(join(s.home, "projects"))[0], "sessions");
+  expect(readFileSync(join(dir, readdirSync(dir)[0]), "utf8")).toContain("In src, never use var.");
+});
+
+test("/memory edit opens the chosen file in the editor", async () => {
+  s = await open({ env: { EDITOR: "sh -c 'printf \"Prefer small functions.\" >> \"$0\"'" } });
+  await s.send("/memory edit project");
+  await s.wait(/Saved .*AGENTS\.md/);
+  expect(readFileSync(join(s.root, "AGENTS.md"), "utf8")).toBe("Prefer small functions.");
+});
