@@ -39,6 +39,8 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["tasks", "[stop <n>]", "commands running in the background"],
   ["hooks", "", "your commands that run around tool calls, messages and stops"],
   ["mcp", "", "MCP servers and the tools they offer"],
+  ["skills", "", "instructions the model reads when a task calls for them"],
+  ["agents", "", "subagents the model can hand work to"],
   ["mode", "[ask|auto|plan|dontask|yolo]", "show or set the mode"],
   ["permissions", "[allow|ask|deny|remove <rule>] [reset]", "rules for what runs without asking, asks, or is refused"],
   ["init", "", "have the model write AGENTS.md for this project"],
@@ -171,7 +173,11 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const historyAt = useRef(-1); // -1: not browsing
   const draft = useRef("");
   const files = useRef<string[] | null>(null);
-  const custom = useMemo(() => loadCommands(app.root), []);
+  // A skill can be called by name like a command: its text is sent, with what was typed after it.
+  const custom = useMemo(() => {
+    const commands = loadCommands(app.root);
+    return [...commands, ...app.skills.filter((s) => !commands.some((c) => c.name === s.name)).map((s) => ({ name: s.name, description: s.description, file: s.file, body: `Use the ${s.name} skill.\n\n${s.body}` }))];
+  }, []);
   const allCommands: [string, string, string][] = [...COMMANDS, ...custom.filter((c) => !COMMANDS.some((b) => b[0] === c.name)).map((c): [string, string, string] => [c.name, "[arguments]", c.description])];
 
   const { live } = store;
@@ -308,6 +314,10 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
         return say(app.status(version).join("\n"));
       case "mcp":
         return say(app.describeServers().join("\n"));
+      case "skills":
+        return say(app.skills.length ? app.skills.map((s) => `${s.name}  ${p.dim(s.description)}  ${p.dim(s.file.replace(homedir(), "~"))}`).join("\n") : "No skills. A skill is a file at .heyho/skills/<name>/SKILL.md (or in ~/.heyho/skills) with a description and instructions.");
+      case "agents":
+        return say(app.agents.length ? app.agents.map((a) => `${a.name}  ${p.dim(a.description)}${a.tools ? p.dim(`  tools: ${a.tools.join(", ")}`) : ""}`).join("\n") : "No subagents. A subagent is a file at .heyho/agents/<name>.md (or in ~/.heyho/agents) holding its instructions.");
       case "hooks":
         return say(app.describeHooks().join("\n"));
       case "tasks": {

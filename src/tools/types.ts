@@ -12,6 +12,7 @@ export type ToolContext = {
   question?: (question: string, options: string[]) => Promise<string | null>; // null: nobody is there to answer
   onChange?: (abs: string, before: string | null, after: string) => void; // a file was written
   onOutput?: (chunk: string) => void; // live output of a running command
+  readRoots?: string[]; // folders outside the workspace that may be read: the user's skills
   notesFile?: string; // the one file outside the workspace the agent may write, unasked
   readExtra?: (abs: string) => string; // text to add the first time a file in some folder is read
   readDenied?: (abs: string) => string | null; // why this file may not be read, if a rule says so
@@ -73,6 +74,7 @@ export function resolvePath(ctx: ToolContext, p: string, opts: { allowState?: bo
   const real = resolve(realpathSync(existing), relative(existing, abs));
   if (inside(ctx.root, real)) return real;
   if (opts.allowState && inside(realpathSync(ctx.stateDir), real)) return real;
+  if (opts.allowState && ctx.readRoots?.some((dir) => existsSync(dir) && inside(realpathSync(dir), real))) return real;
   throw new Error(`${p} is outside the working directory ${ctx.root}. Use a path inside it.`);
 }
 

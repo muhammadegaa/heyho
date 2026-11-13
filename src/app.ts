@@ -9,6 +9,7 @@ import { Approvals, CYCLE, MODES, PLAN_REFUSAL, type Kind, type Mode } from "./a
 import { HOOK_EVENTS, loadHooks, runHooks, type Hook, type HookEvent } from "./hooks.ts";
 import { mcpPrompt, McpServer, mcpTool, serverConfigs } from "./mcp.ts";
 import { heyhoHome, loadSettings, type Layer } from "./settings.ts";
+import { agentsPrompt, loadAgents, loadSkills, skillsPrompt, type AgentDef, type Skill } from "./skills.ts";
 import { Changes } from "./changes.ts";
 import { CARRY_ON, compact } from "./compact.ts";
 import { newStats, runAgent, type AgentEvent, type RunResult, type Stats } from "./loop.ts";
@@ -115,7 +116,7 @@ export class App {
   }
   private firstMessage(): Message {
     this.folderNotes.clear();
-    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile, { replace: this.opts.systemPrompt, append: [mcpPrompt(this.servers).trimEnd(), this.opts.appendSystemPrompt].filter(Boolean).join("\n\n") || undefined }) };
+    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile, { replace: this.opts.systemPrompt, append: [skillsPrompt(this.skills), agentsPrompt(this.agents), mcpPrompt(this.servers).trimEnd(), this.opts.appendSystemPrompt].filter(Boolean).join("\n\n") || undefined }) };
   }
   // The instruction files in effect, for /memory.
   instructionFiles() {
@@ -152,7 +153,7 @@ export class App {
     for (const [action, list] of [["allow", opts.allow], ["deny", opts.deny]] as const)
       for (const rule of list ?? []) if (!this.approvals.addRule(action, rule)) throw new Error(`"${rule}" is not a rule. Examples: bash(npm test *), edit(src/**), read(.env)`);
     if (opts.tools) {
-      const unknown = opts.tools.filter((n) => n !== "mcp" && !TOOLS.some((t) => t.name === n));
+      const unknown = opts.tools.filter((n) => n !== "mcp" && n !== "agent" && !TOOLS.some((t) => t.name === n));
       if (unknown.length) throw new Error(`Unknown tool${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}. Tools: ${TOOLS.map((t) => t.name).join(", ")}.`);
       this.tools = TOOLS.filter((t) => opts.tools!.includes(t.name));
     }
@@ -176,6 +177,7 @@ export class App {
       },
       onOutput: (chunk) => front.output?.(chunk),
       notesFile: join(this.stateDir, "memory", "NOTES.md"),
+      readRoots: [join(heyhoHome(), "skills")],
       readExtra: (abs) => folderInstructions(this.root, abs, this.folderNotes),
       readDenied: (abs) => {
         const rule = this.approvals.readDenied(abs);
@@ -186,6 +188,38 @@ export class App {
   }
 
   // Finds the server and its context size, then opens a new session or the last one.
+  skills: Skill[] = [];
+  agents: AgentDef[] = [];
+
+  // A subagent: a fresh conversation with the role's own instructions, the same approvals,
+  // and no way to start another. Only its last reply goes back to the conversation that asked.
+  private agentTool(): Tool {
+    return {
+      name: "agent",
+      description: "Give a self-contained task to a subagent listed in the system prompt.",
+      parameters: { type: "object", properties: { agent: { type: "string" }, task: { type: "string" } }, required: ["agent", "task"] },
+      run: async (args) => {
+        const def = this.agents.find((a) => a.name === String(args.agent));
+        if (!def) return { ok: false, text: `No subagent "${args.agent}". Subagents: ${this.agents.map((a) => a.name).join(", ")}` };
+        const task = String(args.task ?? "").trim();
+        if (!task) return { ok: false, text: "task is empty." };
+        const tools = this.tools.filter((t) => t.name !== "agent" && (!def.tools || def.tools.includes(t.name)));
+        const messages: Message[] = [
+          { role: "system", content: systemPrompt(this.root, new Date(), undefined, { replace: def.body }) },
+          { role: "user", content: task },
+        ];
+        const forward = (e: AgentEvent) => {
+          if (e.type === "tool_start" || e.type === "tool") this.front.onEvent({ ...e, sub: true });
+          else if (e.type !== "text" && e.type !== "turn") this.front.onEvent(e);
+        };
+        const result = await runAgent({ profile: this.profile, messages, tools, ctx: this.ctx, maxSteps: this.opts.maxSteps, contextSize: this.contextSize, stats: newStats(), onEvent: forward, record: () => {}, signal: this.ctx.signal, hooks: this.toolHooks });
+        const last = messages.findLast((m) => m.role === "assistant");
+        const report = (last && typeof last.content === "string" ? last.content : "") || "(the subagent wrote no report)";
+        return result.status === "done" ? { ok: true, text: report } : { ok: false, text: `The subagent stopped early (${result.status}${"reason" in result && result.reason ? `: ${result.reason}` : ""}). What it had written:\n${report}` };
+      },
+    };
+  }
+
   servers: McpServer[] = [];
   private async startServers() {
     const configs = serverConfigs(this.root, this.layers).filter(([, , source]) => source !== "project" || this.trusted);
@@ -201,6 +235,10 @@ export class App {
 
   async start() {
     await this.connect();
+    this.skills = loadSkills(this.root);
+    this.ctx.readRoots = [...new Set([join(heyhoHome(), "skills"), ...this.skills.map((s) => join(s.file, s.file.endsWith("SKILL.md") ? "../.." : ".."))])];
+    this.agents = loadAgents(this.root);
+    if (this.agents.length && (!this.opts.tools || this.opts.tools.includes("agent"))) this.tools = [...this.tools, this.agentTool()];
     await this.startServers();
     // A headless run carries on from headless runs too; an interactive one skips those one-offs.
     const earlier = listSessions(this.stateDir, 50, { headless: this.opts.headless });

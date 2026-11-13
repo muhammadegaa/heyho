@@ -8,10 +8,11 @@ export type AgentEvent =
   | { type: "thinking"; text: string }
   | { type: "calling"; name: string; argChars: number }
   | { type: "retry"; reason: string }
-  | { type: "tool_start"; name: string; args: Record<string, unknown> }
+  // `sub` marks a call made by a subagent, shown under the agent call that started it.
+  | { type: "tool_start"; name: string; args: Record<string, unknown>; sub?: boolean }
   | { type: "text"; text: string }
   | { type: "turn"; step: number; usage: Usage; ms: number }
-  | { type: "tool"; name: string; args: Record<string, unknown>; result: ToolResult };
+  | { type: "tool"; name: string; args: Record<string, unknown>; result: ToolResult; sub?: boolean };
 
 export type Stats = {
   steps: number;

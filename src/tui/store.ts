@@ -142,13 +142,22 @@ export class Store {
         this.live.activity = null;
         break;
       case "tool_start": {
+        if (e.sub) {
+          this.activity(`subagent: ${e.name} ${this.arg(e.args, 50)}`);
+          break;
+        }
         this.endReply();
+        if (e.name === "agent") this.add(p.green("⏺"), `${p.bold("agent")} ${String(e.args.agent ?? "")}: ${oneLine(String(e.args.task ?? ""), 200)}`);
         this.toolStart = Date.now();
         const arg = this.arg(e.args, 60);
         this.activity(e.name === "bash" ? `running ${arg}` : `${e.name} ${arg}`);
         break;
       }
       case "tool": {
+        if (e.sub) {
+          this.add(" ", p.dim(`↳ ${e.name} ${this.arg(e.args, 100)}${e.result.ok ? "" : `  ${oneLine(e.result.text.split("\n")[0], 80)}`}`));
+          break;
+        }
         this.live.activity = null;
         const took = Date.now() - this.toolStart;
         const arg = this.arg(e.args, 100);
@@ -170,6 +179,10 @@ export class Store {
           this.add(p.green("⏺"), `${p.bold(e.name)} ${arg}${counts}${d ? "\n" + d.lines.join("\n") : ""}`);
         } else {
           if (e.name === "todo" || e.name === "ask") break; // the checklist and the answer are shown as they are
+          if (e.name === "agent") {
+            this.add(" ", p.dim(`↳ reported back, ${lines.length} line${lines.length === 1 ? "" : "s"}`));
+            break;
+          }
           const got = lines.length === 1 ? oneLine(lines[0], 100) : `${e.name === "read" ? lines.length - 1 : lines.length} lines`;
           this.add(p.green("⏺"), `${head}  ${p.dim(got)}`);
         }
