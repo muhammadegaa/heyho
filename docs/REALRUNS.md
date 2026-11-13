@@ -17,11 +17,11 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 
 | # | Area | Repo | Sent | Expect | Result |
 |---|---|---|---|---|---|
-| 1 | Read-only question | cart | `what does the total function do?` | Reads the file, answers correctly, edits nothing | not run |
-| 2 | Edit, ask mode | cart | `add a HALF code to discount that returns 50%` | Approval panel with the diff; Yes applies it | not run |
-| 3 | Decline with a correction | cart | same, then Tab and `name it HALFOFF` | Retries with the new name | not run |
-| 4 | Edit, then verify | cart | `add a test for HALFOFF and run the tests` | Edits the test file, runs `npm test`, reports the count | not run |
-| 5 | Saved command rule | cart | `run npm test`, choose "don't ask again", ask again | Second run does not ask; rule is in `/permissions` | not run |
+| 1 | Read-only question | cart | `what does the total function do?` | Reads the file, answers correctly, edits nothing | pass. Read the file, answered correctly with an example from the test |
+| 2 | Edit, ask mode | cart | `add a HALF code to discount that returns 50%` | Approval panel with the diff; Yes applies it | pass |
+| 3 | Decline with a correction | cart | same, then Tab and `name it HALFOFF` | Retries with the new name | pass. Retried as HALFOFF |
+| 4 | Edit, then verify | cart | `add a test for HALFOFF and run the tests` | Edits the test file, runs `npm test`, reports the count | pass. Added the test, ran `npm test` without asking, reported 3 passing |
+| 5 | Saved command rule | cart | `run npm test`, choose "don't ask again", ask again | Second run does not ask; rule is in `/permissions` | pass. Rule `bash(npm test *)` saved and listed; the model wrote `cd . && npm test`, which the rule still covered |
 | 6 | Auto mode | cart | Shift+Tab, `rename subtotal to sum everywhere` | Edits without asking; tests still pass; a command outside the built-in list still asks | not run |
 | 7 | Plan mode | cart | plan mode, `add a tax(total, rate) function and use it in total` | No file changes; a plan; then the three-way question | not run |
 | 8 | Plan, keep planning | cart | at that question choose 3, `also cover rounding` | Plan is revised, still no changes | not run |
