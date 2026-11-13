@@ -62,10 +62,10 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 43 | File mention | big | `explain @src/compact.ts` | The file is read without a search first | pass. The mentioned file was read directly (2 steps, no search) and explained correctly |
 | 44 | Headless formats | cart | `--json`, `--output-format stream-json`, `-p` with stdin | Valid JSON; events per line; stdin is used | pass. `--json`: one object, status done, reply `2`. `--output-format stream-json`: five lines, each valid JSON, from `start` to `result`. `-p` with piped input: the input was used |
 | 45 | Headless tool limits | cart | `--tools read,search "fix the bug in discount"` and `--allowed-tools "bash(npm test *)" --mode dontask "run the tests"` | First cannot edit and says so; second runs only the tests | defect, then pass. `--allowed-tools "bash(npm test *)" --mode dontask`: tests ran, `ls -la /etc` was refused. `--tools read,search` with a fix request: the model read the file ten times and was stopped by the repeat guard without saying it could not edit; fixed in 9148c14. Rerun: three steps, said it could not edit and gave the exact change |
-| 46 | Step limit | big | `--max-steps 3 "find every TODO and list them"` | Stops at the limit with a clear status | not run |
-| 47 | Settings | cart | `editorMode: vim`, `theme: none`, a `statusLine` command | Vim keys work; no colour codes; status line shows the command's output | not run |
-| 48 | Bug fix, multi-file | big | break `diffLines` in a copy (off-by-one in hunk line numbers); `the diff line numbers are wrong; find and fix it` | The failing test is found, the fix is right, the suite passes | not run |
-| 49 | Feature, multi-file | big | `add a /stats command that shows tool call counts for this session, with a test` | Command, help entry and test added; suites pass | not run |
+| 46 | Step limit | big | `--max-steps 3 "find every TODO and list them"` | Stops at the limit with a clear status | pass. Sent with a five-file reading task: stopped after three steps with `[step_limit]` and exit code 0. The wrap-up summarised the file it had reached, not what was left |
+| 47 | Settings | cart | `editorMode: vim`, `theme: none`, a `statusLine` command | Vim keys work; no colour codes; status line shows the command's output | defect, then pass. From the user's settings file: the status line showed `branch:master`, `theme: none` left no colour codes on screen, and the footer showed INSERT and NORMAL. With vim keys, Esc then `x` deleted nothing; fixed in 87a834a |
+| 48 | Bug fix, multi-file | big | break `diffLines` in a copy (off-by-one in hunk line numbers); `the diff line numbers are wrong; find and fix it` | The failing test is found, the fix is right, the suite passes | pass. With `newNo` planted at 0 in `src/diff.ts` (3 of 4 diff tests failing) and only the symptom described, the model found the line, fixed it and ran the diff tests: 1 minute, 6 steps, 4 pass (checked outside heyho) |
+| 49 | Feature, multi-file | big | `add a /stats command that shows tool call counts for this session, with a test` | Command, help entry and test added; suites pass | pass. `/stats` added to the command list and the handler, with an e2e test modelled on its neighbours: 14 steps, 13 lines changed in 2 files. Type check clean and the new test passes (both checked outside heyho). The checklist's last item was left unticked although the test had been run |
 | 50 | Refactor | big | `move the secs helper out of ui.ts into its own file and update imports` | Type check and tests pass after | not run |
 
 ## Defects found
@@ -89,6 +89,7 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 39 | Writing notes, the model thought to the output limit and wrote nothing | 0ef6490: notes, step-limit summaries and the retry after runaway thinking go without thinking | `test/loop.test.ts`, the shortening and all-thinking tests |
 | 39 | A second fill of the context in one turn ended the turn | e810d49: up to three shortenings a turn | `e2e/headless.test.ts` "a long task is shortened more than once in one run and still finishes" |
 | 45 | With `--tools` the model was not told which tools it had, and looped on the ones it did | 9148c14 | `e2e/headless.test.ts` "--tools limits which tools the model is offered" |
+| 47 | With vim keys, Esc left the cursor past the last character, so `x` deleted nothing | 87a834a | `e2e/screen.test.ts` "vim keys: Esc enters normal mode, motions and deletes work, i returns to typing" |
 
 ## Model behaviour recorded
 
