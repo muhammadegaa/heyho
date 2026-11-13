@@ -95,13 +95,18 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
       if (typeof p === "string") c.function.arguments = "{}";
       else if (p.repaired || !c.function.arguments.trim()) c.function.arguments = JSON.stringify(p.args);
     });
+    // A reply that ran out of room while still thinking has nothing to keep: replaying the
+    // thinking would fill the context with it and invite the same again.
+    const allThinking = reply.finish === "length" && !calls.length && !reply.message.content?.trim();
+    if (allThinking) reply.message = { role: "assistant", content: "(I thought until the reply ran out of room and wrote no answer.)" };
     push(reply.message);
 
     if (reply.finish === "length") {
       o.stats.cutoffs++;
       for (const c of calls) push({ role: "tool", tool_call_id: c.id, content: CUTOFF_RESULT });
       if (++cutoffs >= CUTOFF_STOP) return { status: "stopped", reason: "the model's reply hit the output token limit twice in a row" };
-      if (!calls.length) push({ role: "user", content: "Your reply was cut off by the output token limit. Continue from where you stopped, in smaller pieces." });
+      if (allThinking) push({ role: "user", content: "You spent the whole reply thinking and wrote nothing. Do not work it all out again: answer now, briefly, from what you already know, or make one tool call." });
+      else if (!calls.length) push({ role: "user", content: "Your reply was cut off by the output token limit. Continue from where you stopped, in smaller pieces." });
       continue;
     }
     cutoffs = 0;

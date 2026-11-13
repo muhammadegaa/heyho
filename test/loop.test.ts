@@ -151,6 +151,16 @@ test("repaired arguments are counted; unrepairable ones get the parse error", as
   expect(stats.repairedArgs).toBe(1);
 });
 
+test("a reply that was all thinking and hit the output limit is not replayed, and the model is told to answer", async () => {
+  // Qwen3.6 reviewing a 70-line file thought for 7 minutes to the limit; the 16k tokens of thinking then went back in the prompt.
+  const { run } = setup();
+  script = [{ reasoning: "x".repeat(400), finish: "length" }, { text: "Two bugs." }];
+  expect((await run()).status).toBe("done");
+  const sent = requests[1].messages as { role: string; content: string | null; reasoning_content?: string }[];
+  expect(JSON.stringify(sent)).not.toContain("xxxx");
+  expect(sent.at(-1)!.content).toMatch(/whole reply thinking/);
+});
+
 test("a second cutoff in a row stops the run with every call answered", async () => {
   const { run, messages } = setup();
   const cut = { calls: [["write", '{"path":"b.txt","content":"x']] as [string, string][], finish: "length" };
