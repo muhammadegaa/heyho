@@ -9,6 +9,7 @@ export type ToolContext = {
   approve: (kind: "edit" | "write" | "bash", summary: string, change?: Change) => Promise<boolean | string>;
   onChange?: (abs: string, before: string | null, after: string) => void; // a file was written
   onOutput?: (chunk: string) => void; // live output of a running command
+  readDenied?: (abs: string) => string | null; // why this file may not be read, if a rule says so
   sandbox: { enabled: boolean; noNet: boolean };
   outCount: { n: number };
   signal?: AbortSignal;
@@ -33,7 +34,7 @@ export const ok = (text: string): ToolResult => ({ ok: true, text });
 export async function declined(ctx: ToolContext, kind: "edit" | "write" | "bash", summary: string, change?: Change): Promise<ToolResult | null> {
   const a = await ctx.approve(kind, summary, change);
   if (a === true) return null;
-  if (typeof a === "string" && a.startsWith("Plan mode")) return fail(a);
+  if (typeof a === "string" && (a.startsWith("Plan mode") || a.startsWith("Blocked:"))) return fail(a);
   return fail(a ? `The user declined this action and said: ${a}` : "The user declined this action. Ask what they want instead, or try another approach.");
 }
 

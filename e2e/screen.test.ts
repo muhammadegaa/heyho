@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { call, open, reply, rules } from "./harness.ts";
+import { call, FILES, open, reply, rules } from "./harness.ts";
 
 type Session = Awaited<ReturnType<typeof open>>;
 let s: Session | undefined;
@@ -601,4 +601,96 @@ test("/status shows version, model, folder and session", async () => {
   const screen = await s.wait(/heyho v\d[\s\S]*folder:/);
   expect(screen).toMatch(/model: qwen3-coder/);
   expect(screen).toMatch(/mode: ask/);
+});
+
+// ---- rules and settings ----
+
+const settings = (o: object) => ({ ...FILES, ".heyho/settings.json": JSON.stringify(o) });
+
+test("a deny rule refuses an edit with no question, and the model is told why", async () => {
+  s = await open({ files: settings({ permissions: { deny: ["edit(greet.js)"] } }), steps: [EDIT, reply("I can't change that file.\n")] });
+  await s.send("change it");
+  const screen = await s.wait(/worked for/);
+  expect(screen).toMatch(/Blocked: a rule set by the user forbids this \(edit\(greet\.js\)\)/);
+  expect(screen).not.toMatch(/Make this edit\?/);
+  expect(readFileSync(join(s.root, "greet.js"), "utf8")).toContain('"hello"');
+});
+
+test("a deny rule stops a file being read, and hides it from search", async () => {
+  s = await open({
+    files: { ...settings({ permissions: { deny: ["read(.env)"] } }), ".env": "SECRET=hunter2\n" },
+    steps: [call("read", { path: ".env" }), call("search", { pattern: "SECRET" }), reply("Not allowed.\n")],
+  });
+  await s.send("show me the env file");
+  const screen = await s.wait(/worked for/);
+  expect(screen).toMatch(/forbids reading this file \(read\(\.env\)\)/);
+  expect(screen).toMatch(/search SECRET\s+No matches\./);
+  expect(s.scrollback()).not.toMatch(/hunter2/);
+});
+
+test("an allow rule from the project's settings runs a command without asking", async () => {
+  s = await open({ files: settings({ permissions: { allow: ["bash(node *)"] } }), steps: [BASH, reply("Ran.\n")] });
+  await s.send("run it");
+  const screen = await s.wait(/worked for/);
+  expect(screen).toMatch(/⏺ bash node greet\.js\s+exit code 0/);
+  expect(screen).not.toMatch(/Run this command\?/);
+});
+
+test("an ask rule asks even in auto mode", async () => {
+  s = await open({ args: ["--mode", "auto"], files: settings({ permissions: { ask: ["edit(greet.js)"] } }), steps: [EDIT, reply("Done.\n")] });
+  await s.send("change it");
+  await s.wait(/Make this edit\?/);
+  await s.key("1");
+  await s.wait(/worked for/);
+});
+
+test("the mode can come from settings; a flag overrides it", async () => {
+  s = await open({ files: settings({ mode: "auto" }) });
+  await s.wait(/⏵⏵ auto/);
+  s.close();
+  s = await open({ files: settings({ mode: "auto" }), args: ["--mode", "plan"] });
+  await s.wait(/⏸ plan/);
+});
+
+test("dontask mode refuses what would have asked, without a question", async () => {
+  s = await open({ args: ["--mode", "dontask"], steps: [EDIT, BASH, reply("Could not do either.\n")] });
+  await s.wait(/⏵⏵ dontask/);
+  await s.send("change it and run it");
+  const screen = await s.wait(/worked for/);
+  expect(screen.match(/Blocked: this session runs without asking/g)?.length).toBe(2);
+  expect(readFileSync(join(s.root, "greet.js"), "utf8")).toContain('"hello"');
+});
+
+test("a chained command offers one rule per part that needs one; the next like it runs unasked", async () => {
+  s = await open({ steps: [call("bash", { command: "cd . && node greet.js | head -2" }), call("bash", { command: "node greet.js && node greet.js" }), reply("Done.\n")] });
+  await s.send("run them");
+  const panel = await s.wait(/Run this command\?/);
+  expect(panel).toMatch(/2\. Yes, and don't ask again in this project for: node …/);
+  await s.key("2");
+  const screen = await s.wait(/worked for/);
+  expect(screen.match(/exit code 0/g)?.length).toBe(2);
+  expect(JSON.parse(readFileSync(join(s.home, "projects", readdirSync(join(s.home, "projects"))[0], "allowed.json"), "utf8"))).toEqual({ allow: ["bash(node *)"] });
+});
+
+test("auto mode runs file commands inside the project without asking, but not others", async () => {
+  s = await open({ args: ["--mode", "auto"], steps: [call("bash", { command: "mkdir -p out && cp greet.js out/copy.js" }), BASH, reply("Done.\n")] });
+  await s.send("copy it and run it");
+  await s.wait(/Run this command\?[\s\S]*|Run a command/);
+  expect(existsSync(join(s.root, "out/copy.js"))).toBe(true);
+  expect(s.screen()).toMatch(/node greet\.js/);
+});
+
+test("/permissions adds a deny rule for the session and lists rules with where they come from", async () => {
+  s = await open({ files: settings({ permissions: { allow: ["bash(node *)"] } }), steps: [BASH, reply("Blocked.\n")] });
+  await s.send("/permissions deny bash(node *)");
+  const listed = await s.wait(/deny\s+bash\(node \*\)\s+\(this session\)/);
+  expect(listed).toMatch(/allow\s+bash\(node \*\)\s+\(project settings\)/);
+  await s.send("run it");
+  const screen = await s.wait(/worked for/);
+  expect(screen).toMatch(/Blocked: a rule set by the user forbids this \(bash\(node \*\)\)/);
+});
+
+test("a settings file that is not valid JSON is reported, not fatal", async () => {
+  s = await open({ files: { ...FILES, ".heyho/settings.json": "{ oops" } });
+  expect(s.screen()).toMatch(/not valid JSON and was ignored/);
 });

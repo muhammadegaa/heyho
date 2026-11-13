@@ -20,6 +20,8 @@ export const read: Tool = {
   },
   async run(args, ctx) {
     const abs = resolvePath(ctx, String(args.path), { allowState: true });
+    const denied = ctx.readDenied?.(abs);
+    if (denied) return fail(denied);
     let st;
     try {
       st = statSync(abs);

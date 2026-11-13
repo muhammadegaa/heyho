@@ -150,7 +150,7 @@ export class Store {
         const lines = e.result.text.split("\n");
         const head = `${p.bold(e.name)} ${arg}`;
         if (!e.result.ok) {
-          this.add(p.red("⏺"), `${head}\n${lines[0].startsWith("Plan mode") ? p.yellow("not run: plan mode") : lines[0].startsWith("The user declined") ? p.yellow(oneLine(lines[0].replace(/^The user declined this action( and said: )?/, (_, said) => (said ? "you said: " : "declined")).replace(/^\. Ask what.*$/, ""), 300)) : p.red(oneLine(lines[0], 300))}`);
+          this.add(p.red("⏺"), `${head}\n${lines[0].startsWith("Plan mode") ? p.yellow("not run: plan mode") : lines[0].startsWith("Blocked:") ? p.yellow(oneLine(lines[0].replace(/\. Do not try.*$|\. Carry on.*$/, ""), 200)) : lines[0].startsWith("The user declined") ? p.yellow(oneLine(lines[0].replace(/^The user declined this action( and said: )?/, (_, said) => (said ? "you said: " : "declined")).replace(/^\. Ask what.*$/, ""), 300)) : p.red(oneLine(lines[0], 300))}`);
         } else if (e.name === "bash") {
           const failed = lines[0] !== "exit code 0";
           const body = lines.slice(1).join("\n");

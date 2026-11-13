@@ -51,7 +51,8 @@ export const search: Tool = {
     const [bin, argv] = command(ctx.root, pattern, glob, path);
     const r = spawnSync(bin, argv, { cwd: ctx.root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 30_000 });
     if (r.status !== 0 && r.status !== 1) return fail(`search failed: ${(r.stderr || r.error?.message || "").trim().slice(0, 500)}`);
-    const lines = r.stdout.split("\n").filter(Boolean).map((l) => l.replace(/^\.\//, ""));
+    // Matches inside files a rule forbids reading are left out, like the files themselves.
+    const lines = r.stdout.split("\n").filter(Boolean).map((l) => l.replace(/^\.\//, "")).filter((l) => !ctx.readDenied?.(join(ctx.root, l.split(":")[0])));
     const files = pattern ? lines : lines.filter((l) => existsSync(join(ctx.root, l)));
     if (!files.length) return ok("No matches.");
     const shown = files.slice(0, MAX_MATCHES).map((l) => (l.length > MAX_LINE ? l.slice(0, MAX_LINE) + " [cut]" : l));

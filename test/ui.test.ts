@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Approvals, prefixOf } from "../src/approve.ts";
+import { Approvals, splitCommand } from "../src/approve.ts";
+import { loadSettings } from "../src/settings.ts";
 import { Changes } from "../src/changes.ts";
 import { listSessions, loadMessages, newSession } from "../src/session.ts";
 import { Markdown, outputTail, paint, renderDiff } from "../src/ui.ts";
@@ -63,24 +64,30 @@ test("ask mode asks for edits and commands; read-only commands inside the worksp
   expect(rooted.allowed("bash", "cat /etc/passwd")).toBe(false);
 });
 
-test("a prefix rule covers the command with other arguments but never a chained command", () => {
-  const a = new Approvals("ask");
-  expect(prefixOf("npm test -- --watch")).toBe("npm test");
-  expect(prefixOf("ls -la")).toBe("ls");
-  expect(prefixOf("npm test && rm x")).toBeNull();
-  a.allowPrefix("npm test");
-  expect(a.allowed("bash", "npm test -- one")).toBe(true);
-  expect(a.allowed("bash", "npm testx")).toBe(false);
+test("a compound command is judged part by part, and anything that can't be taken apart asks", () => {
+  expect(splitCommand("cd src && npm test | tail -5; echo 'a; b'")).toEqual(["cd src", "npm test", "tail -5", "echo 'a; b'"]);
+  expect(splitCommand("npm test > out.txt")).toBeNull();
+  expect(splitCommand("echo $(whoami)")).toBeNull();
+  expect(splitCommand("sleep 5 &")).toBeNull();
+  const a = new Approvals("ask", undefined, "/work/repo");
+  expect(a.allowed("bash", "cd /work/repo && git status | head -3")).toBe(true);
+  expect(a.allowed("bash", "cd /work/repo && npm test")).toBe(false);
+  expect(a.suggest("cd /work/repo && npm test -- x && node build.js")).toEqual(["npm test", "node"]);
+  a.allowSuggested("cd /work/repo && npm test -- x && node build.js");
+  expect(a.allowed("bash", "npm test && node other.js")).toBe(true);
   expect(a.allowed("bash", "npm test && rm -rf .")).toBe(false);
-  a.allowExact("npm test && echo ok");
-  expect(a.allowed("bash", "npm test && echo ok")).toBe(true);
+  expect(a.allowed("bash", "npm test > log")).toBe(false);
+  expect(a.suggest("npm test > log")).toBeNull();
 });
 
-test("auto mode stops asking for edits but still asks for commands", () => {
-  const a = new Approvals("auto");
+test("auto mode stops asking for edits and for file commands inside the workspace", () => {
+  const a = new Approvals("auto", undefined, "/work/repo");
   expect(a.allowed("edit", "x")).toBe(true);
   expect(a.allowed("write", "x")).toBe(true);
+  expect(a.allowed("bash", "mkdir -p src/new && mv a.js src/new/a.js")).toBe(true);
+  expect(a.allowed("bash", "rm -rf /etc")).toBe(false);
   expect(a.allowed("bash", "npm test")).toBe(false);
+  expect(new Approvals("ask", undefined, "/work/repo").allowed("bash", "mkdir x")).toBe(false);
 });
 
 test("plan mode lets read-only commands run and nothing else", () => {
@@ -92,18 +99,58 @@ test("plan mode lets read-only commands run and nothing else", () => {
   expect(a.allowed("write", "x")).toBe(false);
 });
 
-test("command rules are kept for the project; allowing all edits is not", () => {
+test("rules: deny beats ask beats allow, in every mode", () => {
+  const layers = [
+    { source: "user" as const, file: "u", settings: { permissions: { allow: ["bash(npm run *)", "edit(docs/**)"], deny: ["read(.env)", "bash(git push *)"] } } },
+    { source: "project" as const, file: "p", settings: { permissions: { ask: ["bash(npm run deploy *)"], deny: ["Edit(secrets/**)"], allow: ["nonsense rule"] } } },
+  ];
+  const a = new Approvals("ask", undefined, "/work/repo", layers);
+  expect(a.problems.length).toBe(1);
+  expect(a.decide("bash", "npm run build").action).toBe("allow");
+  expect(a.decide("bash", "npm run deploy prod").action).toBe("ask");
+  expect(a.decide("bash", "git status && git push origin main")).toMatchObject({ action: "deny", rule: { text: "bash(git push *)" } });
+  expect(a.decide("edit", "docs/guide.md\n@@ line 1").action).toBe("allow");
+  expect(a.decide("edit", "src/a.ts\n@@ line 1").action).toBe("ask");
+  expect(a.decide("write", "secrets/key.txt (new file, 1 lines)\nx").action).toBe("deny");
+  expect(a.readDenied("/work/repo/config/.env")?.text).toBe("read(.env)");
+  expect(a.readDenied("/work/repo/src/env.ts")).toBeUndefined();
+  const yolo = new Approvals("yolo", undefined, "/work/repo", layers);
+  expect(yolo.decide("bash", "git push origin main").action).toBe("deny");
+  expect(yolo.decide("bash", "rm -rf build").action).toBe("allow");
+});
+
+test("saved answers are kept for the project; allowing all edits is not; rules can be added and removed", () => {
   const file = join(mkdtempSync(join(tmpdir(), "heyho-state-")), "allowed.json");
   const a = new Approvals("ask", file);
   a.allowPrefix("npm test");
-  a.allowExact("make && make install");
+  a.allowExact("make > log");
   a.allowKind("edit");
   const b = new Approvals("ask", file);
   expect(b.allowed("bash", "npm test -- x")).toBe(true);
-  expect(b.allowed("bash", "make && make install")).toBe(true);
+  expect(b.allowed("bash", "make > log")).toBe(true);
   expect(b.allowed("edit", "x")).toBe(false);
+  expect(b.addRule("deny", "bash(npm test *)")).toBe(true);
+  expect(b.addRule("deny", "what")).toBe(false);
+  expect(b.decide("bash", "npm test").action).toBe("deny");
+  expect(b.removeRule("bash(npm test *)")).toBe(true);
+  expect(b.decide("bash", "npm test").action).toBe("ask");
   b.forget();
-  expect(new Approvals("ask", file).allowed("bash", "npm test")).toBe(false);
+  expect(new Approvals("ask", file).allowed("bash", "make > log")).toBe(false);
+});
+
+test("settings files merge with the project's own winning", () => {
+  const home = mkdtempSync(join(tmpdir(), "heyho-home-"));
+  const root = mkdtempSync(join(tmpdir(), "heyho-test-"));
+  process.env.HEYHO_HOME = home;
+  writeFileSync(join(home, "settings.json"), JSON.stringify({ mode: "auto", profile: "qwen3.6", permissions: { deny: ["read(.env)"] } }));
+  mkdirSync(join(root, ".heyho"));
+  writeFileSync(join(root, ".heyho", "settings.json"), JSON.stringify({ mode: "plan" }));
+  writeFileSync(join(root, ".heyho", "settings.local.json"), "{ not json");
+  const s = loadSettings(root);
+  delete process.env.HEYHO_HOME;
+  expect(s.merged).toEqual({ mode: "plan", profile: "qwen3.6" });
+  expect(s.layers.map((l) => l.source)).toEqual(["user", "project"]);
+  expect(s.problems.length).toBe(1);
 });
 
 test("undo restores the last turn's files and leaves files changed since alone", () => {

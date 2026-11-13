@@ -4,9 +4,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { Approvals, MODES, PLAN_REFUSAL, prefixOf, type Kind, type Mode } from "./approve.ts";
+import { Approvals, CYCLE, MODES, PLAN_REFUSAL, type Kind, type Mode } from "./approve.ts";
+import { heyhoHome, loadSettings } from "./settings.ts";
 import { Changes } from "./changes.ts";
 import { CARRY_ON, compact } from "./compact.ts";
 import { newStats, runAgent, type AgentEvent, type RunResult, type Stats } from "./loop.ts";
@@ -19,6 +19,7 @@ import type { Change, ToolContext } from "./tools/types.ts";
 import type { RunInfo } from "./ui.ts";
 
 export type Outcome = RunResult | { status: "error"; reason: string };
+// `prefix` describes what "don't ask again" would allow, or is null when only the exact command can be.
 export type ApprovalRequest = { kind: Kind; summary: string; change?: Change; prefix: string | null };
 // "always": every edit this session, or this exact command from now on. "prefix": commands that start the same way.
 export type ApprovalAnswer = "yes" | "always" | "prefix" | "no" | { say: string };
@@ -67,6 +68,7 @@ export class App {
   session!: Session;
   resumed?: SessionInfo;
   running: AbortController | null = null;
+  problems: string[] = []; // settings that could not be used, to show at start
   private ctx: ToolContext;
   private note = ""; // told to the model at the start of the next user message
   private toldPlan = false;
@@ -78,11 +80,13 @@ export class App {
     this.opts = opts;
     this.front = front;
     this.root = opts.cwd;
-    this.stateDir = join(homedir(), ".heyho", "projects", createHash("sha256").update(this.root).digest("hex").slice(0, 16));
+    this.stateDir = join(heyhoHome(), "projects", createHash("sha256").update(this.root).digest("hex").slice(0, 16));
     mkdirSync(this.stateDir, { recursive: true });
     this.profileName = opts.profile;
     this.profile = loadProfile(opts.profile, { baseUrl: opts.baseUrl, model: opts.model });
-    this.approvals = new Approvals(opts.mode, join(this.stateDir, "allowed.json"), this.root);
+    const settings = loadSettings(this.root);
+    this.approvals = new Approvals(opts.mode, join(this.stateDir, "allowed.json"), this.root, settings.layers);
+    this.problems = [...settings.problems, ...this.approvals.problems];
     this.changes = new Changes(this.root);
     this.ctx = {
       root: this.root,
@@ -96,6 +100,10 @@ export class App {
         front.changed?.({ path: abs.startsWith(this.root + "/") ? abs.slice(this.root.length + 1) : abs, before, after });
       },
       onOutput: (chunk) => front.output?.(chunk),
+      readDenied: (abs) => {
+        const rule = this.approvals.readDenied(abs);
+        return rule ? `A rule set by the user forbids reading this file (${rule.text}). Do not try to read it another way.` : null;
+      },
       approve: (kind, summary, change) => this.approve(kind, summary, change),
     };
   }
@@ -153,8 +161,7 @@ export class App {
     this.ctx.sandbox.enabled = mode === "yolo";
   }
   cycleMode(): Mode {
-    const cycle: Mode[] = MODES.filter((m) => m !== "yolo");
-    this.setMode(cycle[(cycle.indexOf(this.mode) + 1) % cycle.length]);
+    this.setMode(CYCLE[(CYCLE.indexOf(this.mode) + 1) % CYCLE.length]);
     return this.mode;
   }
 
@@ -164,14 +171,18 @@ export class App {
   }
 
   private async approve(kind: Kind, summary: string, change?: Change): Promise<boolean | string> {
-    if (this.approvals.allowed(kind, summary)) return true;
+    const verdict = this.approvals.decide(kind, summary);
+    if (verdict.action === "allow") return true;
+    if (verdict.action === "deny") return `Blocked: a rule set by the user forbids this (${verdict.rule!.text}). Do not try another way to do the same thing; say that it is not allowed.`;
     if (this.mode === "plan") return PLAN_REFUSAL;
+    if (this.mode === "dontask") return "Blocked: this session runs without asking, and this action is not on the allowed list. Carry on without it, or say what you could not do.";
     if (!this.opts.canAsk) return false;
-    const prefix = kind === "bash" ? prefixOf(summary) : null;
+    const suggested = kind === "bash" ? this.approvals.suggest(summary) : null;
+    const prefix = suggested?.length ? suggested.map((p) => `${p} …`).join(", ") : null;
     const answer = await this.front.ask({ kind, summary, change, prefix });
     if (typeof answer === "object") return answer.say;
     if (answer === "always") kind === "bash" ? this.approvals.allowExact(summary) : this.approvals.allowKind(kind);
-    if (answer === "prefix" && prefix) this.approvals.allowPrefix(prefix);
+    if (answer === "prefix" && prefix) this.approvals.allowSuggested(summary);
     return answer !== "no";
   }
 

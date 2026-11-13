@@ -34,8 +34,8 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["export", "[file]", "write the conversation to a markdown file"],
   ["copy", "", "copy the last reply to the clipboard"],
   ["status", "", "version, model, folder, session"],
-  ["mode", "[ask|auto|plan|yolo]", "show or set the mode"],
-  ["allowed", "[reset]", "what runs without asking; reset forgets saved rules"],
+  ["mode", "[ask|auto|plan|dontask|yolo]", "show or set the mode"],
+  ["permissions", "[allow|ask|deny|remove <rule>] [reset]", "rules for what runs without asking, asks, or is refused"],
   ["init", "", "have the model write AGENTS.md for this project"],
   ["model", "[profile]", "show or switch the model profile"],
   ["exit", "", "quit"],
@@ -47,8 +47,8 @@ Shift+Tab changes mode · Esc stops the model · Esc Esc on an empty line opens 
 Ctrl+R searches history · Ctrl+G edits the message in $EDITOR · Ctrl+S sets the draft aside and brings it back
 Ctrl+O shows the last command's full output · Ctrl+L redraws · Ctrl+C twice or Ctrl+D quits`;
 
-const MODE_LABEL: Record<Mode, string> = { ask: "⏸ ask", auto: "⏵⏵ auto", plan: "⏸ plan", yolo: "⏵⏵ yolo" };
-const MODE_SHORT: Record<Mode, string> = { ask: "asks before edits and commands", auto: "edits don't ask", plan: "read-only, proposes a plan", yolo: "nothing asks, commands sandboxed" };
+const MODE_LABEL: Record<Mode, string> = { ask: "⏸ ask", auto: "⏵⏵ auto", plan: "⏸ plan", dontask: "⏵⏵ dontask", yolo: "⏵⏵ yolo" };
+const MODE_SHORT: Record<Mode, string> = { ask: "asks before edits and commands", auto: "edits don't ask", plan: "read-only, proposes a plan", dontask: "refuses what isn't allowed", yolo: "nothing asks, commands sandboxed" };
 
 type Choice<T> = { label: string; hint?: string; value: T };
 type Overlay =
@@ -63,7 +63,7 @@ function approvalChoices(req: ApprovalRequest): Choice<ApprovalAnswer | "say">[]
     req.kind !== "bash"
       ? { label: `Yes, and don't ask again for ${req.kind === "edit" ? "edits" : "new files"} this session`, value: "always" as const }
       : req.prefix
-        ? { label: `Yes, and don't ask again in this project for: ${req.prefix} …`, value: "prefix" as const }
+        ? { label: `Yes, and don't ask again in this project for: ${req.prefix}`, value: "prefix" as const }
         : { label: "Yes, and don't ask again in this project for this exact command", value: "always" as const };
   return [{ label: "Yes", value: "yes" }, always, { label: "No, and say what to do instead", value: "say" }];
 }
@@ -311,8 +311,16 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
         refresh();
         return say(`mode: ${app.mode} (${MODE_HELP[app.mode]})`, "dim");
       case "allowed":
-        if (arg === "reset") app.approvals.forget();
+      case "permissions": {
+        const [verb, ...rest] = arg.split(/\s+/);
+        const rule = rest.join(" ");
+        if (verb === "reset") app.approvals.forget();
+        else if (verb === "allow" || verb === "ask" || verb === "deny") {
+          if (!app.approvals.addRule(verb, rule)) return say(`"${rule}" is not a rule. Examples: bash(npm test *), edit(src/**), read(.env)`, "warn");
+          say(`Added for this session: ${verb} ${rule}. To keep it, put it in .heyho/settings.json.`, "dim");
+        } else if (verb === "remove") say(app.approvals.removeRule(rule) ? `Removed ${rule}.` : `No saved or session rule "${rule}". Rules from settings files are changed there.`, "dim");
         return say(app.approvals.describe().join("\n"));
+      }
       case "init":
         return runTask(INIT_TASK, "/init");
       case "model": {

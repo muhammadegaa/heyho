@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import type { AppOptions } from "./app.ts";
 import type { Mode } from "./approve.ts";
 import { runHeadless, runLineMode } from "./line.ts";
+import { loadSettings } from "./settings.ts";
 
 const VERSION = JSON.parse(readFileSync(join(dirname(import.meta.filename), "..", "package.json"), "utf8")).version;
 
@@ -17,8 +18,9 @@ Options
   --profile <name>      model profile (default qwen3-coder; env HEYHO_PROFILE)
   --base-url <url>      override the profile's OpenAI-compatible endpoint
   --model <name>        override the profile's model name
-  --mode <ask|auto|plan>  ask before every edit and command (default), only before commands,
-                        or change nothing and propose a plan
+  --mode <ask|auto|plan|dontask>
+                        ask before every edit and command (default); only before commands;
+                        change nothing and propose a plan; or refuse whatever isn't allowed
   --continue            carry on from the last session in this directory
   --resume [name]       reopen a session by name, or choose from a list
   --yolo                with a task: no approval prompts; bash runs in the macOS sandbox
@@ -36,15 +38,15 @@ async function main() {
   const { values: opt, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-      profile: { type: "string", default: process.env.HEYHO_PROFILE ?? "qwen3-coder" },
+      profile: { type: "string" },
       "base-url": { type: "string" },
       model: { type: "string" },
-      mode: { type: "string", default: "ask" },
+      mode: { type: "string" },
       continue: { type: "boolean", default: false },
       resume: { type: "boolean", default: false },
       yolo: { type: "boolean", default: false },
       "no-net": { type: "boolean", default: false },
-      "max-steps": { type: "string", default: "40" },
+      "max-steps": { type: "string" },
       json: { type: "boolean", default: false },
       report: { type: "string" },
       plain: { type: "boolean", default: false },
@@ -55,7 +57,11 @@ async function main() {
   });
   if (opt.help) return console.log(HELP);
   if (opt.version) return console.log(VERSION);
-  if (!["ask", "auto", "plan"].includes(opt.mode!)) throw new Error(`--mode is "ask", "auto" or "plan", not "${opt.mode}".`);
+  // A flag wins over the environment, which wins over settings files, which win over the defaults.
+  const cwd = realpathSync(opt.cwd ?? process.cwd());
+  const { merged: settings } = loadSettings(cwd);
+  const mode = opt.mode ?? settings.mode ?? "ask";
+  if (!["ask", "auto", "plan", "dontask"].includes(mode)) throw new Error(`The mode is "ask", "auto", "plan" or "dontask", not "${mode}".`);
 
   const resumeName = opt.resume && positionals.length ? positionals.join(" ").trim() : undefined;
   const task = resumeName ? "" : positionals.join(" ").trim();
@@ -64,13 +70,13 @@ async function main() {
   if (opt.json && !headless) throw new Error("--json needs a task argument.");
 
   const options: AppOptions = {
-    profile: opt.profile!,
+    profile: opt.profile ?? process.env.HEYHO_PROFILE ?? settings.profile ?? "qwen3-coder",
     baseUrl: opt["base-url"],
     model: opt.model,
-    mode: opt.yolo ? "yolo" : (opt.mode as Mode),
+    mode: opt.yolo ? "yolo" : (mode as Mode),
     noNet: opt["no-net"]!,
-    maxSteps: Number(opt["max-steps"]) || 40,
-    cwd: realpathSync(opt.cwd ?? process.cwd()),
+    maxSteps: Number(opt["max-steps"] ?? settings.maxSteps) || 40,
+    cwd,
     headless,
     canAsk: Boolean(process.stdin.isTTY),
     resume: opt.continue!,

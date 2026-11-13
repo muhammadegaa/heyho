@@ -1,11 +1,11 @@
 // The two front ends that need no terminal UI: a headless run of one task, and a
 // line-at-a-time session for when stdin or stdout is not a terminal.
 import { writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { App, INIT_TASK, type AppOptions, type ApprovalAnswer, type ApprovalRequest } from "./app.ts";
 import { MODE_HELP, MODES, type Mode } from "./approve.ts";
 import { createInput, type Input } from "./input.ts";
+import { heyhoHome } from "./settings.ts";
 import { changeTitle, Renderer, renderDiff } from "./ui.ts";
 
 const COMMAND_NAMES = ["help", "context", "compact", "clear", "resume", "undo", "mode", "allowed", "init", "model", "exit"];
@@ -19,7 +19,7 @@ function build(opts: AppOptions, ui: Renderer, input: () => Input) {
     const shown = req.change ? `${bold(changeTitle(req.change))}\n${renderDiff(req.change, ui.colors).lines.join("\n")}` : `${bold("bash")} ${req.summary}`;
     const options =
       req.kind === "bash"
-        ? `[y]es  [n]o  [a]lways for this exact command${req.prefix ? `  [p] always for "${req.prefix} …"` : ""}`
+        ? `[y]es  [n]o  [a]lways for this exact command${req.prefix ? `  [p] always for "${req.prefix}"` : ""}`
         : `[y]es  [n]o  [a]lways for ${req.kind}s this session`;
     process.stderr.write(`\n${shown}\n${dim(options + "  ·  or type what to do instead")}\n`);
     for (;;) {
@@ -39,7 +39,7 @@ function build(opts: AppOptions, ui: Renderer, input: () => Input) {
 export async function runHeadless(opts: AppOptions, task: string, out: { json: boolean; report?: string }) {
   const ui = new Renderer({ stdoutTTY: Boolean(process.stdout.isTTY) && !out.json, stderrTTY: Boolean(process.stderr.isTTY), text: out.json ? process.stderr : process.stdout });
   let input: Input | undefined;
-  const app = build(opts, ui, () => (input ??= createInput({ historyFile: join(homedir(), ".heyho", "history"), root: opts.cwd, commands: [] })));
+  const app = build(opts, ui, () => (input ??= createInput({ historyFile: join(heyhoHome(), "history"), root: opts.cwd, commands: [] })));
   await app.start();
   console.error(ui.colors.dim(`${app.banner()} · ${app.root}`));
   const onSigint = () => app.interrupt();
@@ -58,7 +58,7 @@ export async function runLineMode(opts: AppOptions) {
   const ui = new Renderer({ stdoutTTY: Boolean(process.stdout.isTTY), stderrTTY: Boolean(process.stderr.isTTY) });
   const { dim, bold, red, yellow } = ui.colors;
   let input: Input | undefined;
-  const prompt = () => (input ??= createInput({ historyFile: join(homedir(), ".heyho", "history"), root: opts.cwd, commands: COMMAND_NAMES }));
+  const prompt = () => (input ??= createInput({ historyFile: join(heyhoHome(), "history"), root: opts.cwd, commands: COMMAND_NAMES }));
   const app = build(opts, ui, prompt);
   await app.start();
   console.error(dim(`${app.banner()} · ${app.root}`));

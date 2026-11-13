@@ -22,6 +22,7 @@ export async function runTui(opts: AppOptions, version: string, resume?: string 
     app.resume(named);
     store.note(`Reopened "${named.first}".`, "dim");
   } else if (typeof resume === "string") store.note(`No session here matches "${resume}". Choose one:`, "warn");
+  for (const problem of app.problems) store.note(problem, "warn");
   if (app.resumed) store.note(`Continuing the session from ${app.resumed.when.toLocaleString()}: "${app.resumed.first}"`, "dim");
   const ink = render(<Screen app={app} store={store} version={version} pickSession={resume !== undefined && !named} />, { exitOnCtrlC: false, patchConsole: false });
   await ink.waitUntilExit();

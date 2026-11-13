@@ -26,13 +26,14 @@ export async function open(opts: { steps?: Step[]; files?: Record<string, string
     writeFileSync(join(root, path), content);
   }
   if (opts.git) spawnSync("sh", ["-c", "git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init"], { cwd: root });
-  const stepsFile = join(root, ".steps.json");
+  const stepsFile = `${root}-steps.json`; // beside the project, so the agent never finds it
   writeFileSync(stepsFile, JSON.stringify(opts.steps ?? []));
   const demo = join(import.meta.dirname, "../scripts/ui-demo.ts");
-  tmux("new-session", "-d", "-s", name, "-x", String(opts.cols ?? 100), "-y", String(opts.rows ?? 30), "-e", `DEMO_STEPS=${stepsFile}`, "-e", `DEMO_ROOT=${root}`, "-e", "DEMO_FAST=1", ...Object.entries(opts.env ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+  tmux("new-session", "-d", "-s", name, "-x", String(opts.cols ?? 100), "-y", String(opts.rows ?? 30), "-e", `DEMO_STEPS=${stepsFile}`, "-e", `DEMO_ROOT=${root}`, "-e", "DEMO_FAST=1", "-e", `HEYHO_HOME=${root}-home`, ...Object.entries(opts.env ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
     `bun ${demo} ${(opts.args ?? []).join(" ")}; echo heyho has exited; sleep 600`);
   const s = {
     root,
+    home: `${root}-home`, // heyho's own folder for this test, in place of ~/.heyho
     // The visible rows, without trailing blanks.
     screen: () => tmux("capture-pane", "-t", name, "-p").stdout.replace(/\s+$/, ""),
     // Everything printed so far, including what has scrolled off.
