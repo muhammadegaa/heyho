@@ -134,7 +134,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   useSyncExternalStore(store.subscribe, store.snapshot);
   const { exit, suspendTerminal } = useApp();
   const { columns, rows } = useWindowSize();
-  const width = Math.max(40, columns);
+  const width = Math.max(20, columns);
 
   // When the width changes the terminal re-wraps everything already printed, and the rows
   // Ink would erase are no longer where it thinks. So wipe the screen and its scrollback and

@@ -287,6 +287,17 @@ test("a reply stopped before it finishes reports no steps or speed from the turn
   expect(screen.split("[interrupted]")[1]).not.toMatch(/step|tok\/s/);
 });
 
+test("in a narrow window (28 columns) the rules and footer fit the width and nothing spills onto a second line", async () => {
+  s = await open({ cols: 28, steps: [EDIT, reply("Done.")] });
+  const lines = () => s.screen().split("\n");
+  // A rule drawn for a wider screen wraps into a full row and a short leftover row.
+  expect(lines().filter((l) => /^─+$/.test(l)).every((l) => l.length === 28)).toBe(true);
+  expect(lines().filter((l) => /⏸/.test(l)).length).toBe(1);
+  await s.send("go");
+  await s.wait(/Make this edit\?/);
+  expect(lines().filter((l) => /^─+$/.test(l)).every((l) => l.length === 28)).toBe(true);
+});
+
 test("the context figure in the footer drops as soon as the conversation is cleared", async () => {
   s = await open({ steps: [reply("Done.")] });
   await s.send("go");

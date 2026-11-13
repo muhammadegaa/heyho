@@ -16,7 +16,7 @@ export const paint = (on: boolean): Paint =>
     : { dim: same, red: same, green: same, yellow: same, cyan: same, bold: same };
 
 // A terminal that reports no width (or a tiny one) gets a normal line length.
-const columns = (out: NodeJS.WriteStream) => (out.columns && out.columns >= 40 ? out.columns : 100);
+const columns = (out: NodeJS.WriteStream) => (out.columns && out.columns >= 20 ? out.columns : 100);
 const oneLine = (s: string, max: number) => {
   const flat = s.replace(/\s+/g, " ").trim();
   return flat.length > max ? flat.slice(0, max - 1) + "…" : flat;
