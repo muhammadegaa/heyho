@@ -14,7 +14,7 @@ import { heyhoHome } from "../settings.ts";
 import { ago, sessionPreview, type SessionInfo } from "../session.ts";
 import { changeTitle, lightTheme, paint, renderDiff, tidyPaths } from "../ui.ts";
 import * as ed from "./edit.ts";
-import { normalKey } from "./vim.ts";
+import { normalKey, type VimState } from "./vim.ts";
 import { secs, type Store } from "./store.ts";
 
 const p = paint(true);
@@ -167,6 +167,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const [showTodos, setShowTodos] = useState(true);
   const [vimInsert, setVimInsert] = useState(true); // with vim keys on: typing text, or giving commands
   const vimPending = useRef("");
+  const vimKept = useRef<Pick<VimState, "register" | "undo">>({}); // what was last copied, and changes u can take back
   const [statusText, setStatusText] = useState("");
 
   const [choice, setChoice] = useState(0); // selected row of the approval or overlay list
@@ -588,7 +589,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       if (!vimInsert && input && !key.ctrl && !key.meta && !key.return && !key.tab && !key.escape) {
         let now = edit; // several keys can arrive at once; each acts on the result of the one before
         for (const ch of input) {
-          const next = normalKey({ edit: now, insert: false, pending: vimPending.current }, ch);
+          const next = normalKey({ edit: now, insert: false, pending: vimPending.current, ...vimKept.current }, ch);
           if (!next) {
             // j or k at the edge of the text: move through earlier messages.
             const h = history.current;
@@ -597,6 +598,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
             return;
           }
           vimPending.current = next.pending;
+          vimKept.current = { register: next.register, undo: next.undo };
           now = next.edit;
           if (next.insert) {
             setVimInsert(true);

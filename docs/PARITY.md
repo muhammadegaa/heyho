@@ -79,11 +79,13 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 
 - Themes: `"theme": "light"` for a light background (highlight in blue, warnings in dark orange), beside the default and `"none"`. `e2e/screen.test.ts` "\"theme\": \"light\" highlights the chosen row in blue, where the default uses cyan"; `test/ui.test.ts` "the light theme swaps yellow and cyan for colours that show on a light background".
 
+- Vim keys: counts (`3w`, `2dd`, `d2w`), the `e` motion, copy and paste (`y`, `p`, `P`) and `u`. `test/tui.test.ts` "vim normal mode: counts, the e motion, copy and paste, and undo"; `e2e/screen.test.ts` "vim keys: Esc enters normal mode, motions and deletes work, i returns to typing".
+
 ### Still open
 
 1. Image paste. Out of scope for now: the local models in use take text only, so there is nothing to send an image to.
 
-Smaller differences that remain inside closed rows: code colouring is by rough rules, not a grammar per language; vim mode covers the common keys, not registers, counts or visual mode; MCP is stdio only; there is no full-screen mode with mouse scrolling.
+Smaller differences that remain inside closed rows: code colouring is by rough rules, not a grammar per language; vim mode has no visual mode and one register; MCP is stdio only; there is no full-screen mode with mouse scrolling.
 
 Different by design, not planned: a second model that reviews each action (Claude Code's `auto` mode). heyho's no-prompt mode contains commands with the macOS sandbox instead. Out of scope: IDE, desktop, web and cloud features.
 

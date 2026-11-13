@@ -111,7 +111,7 @@ Three files, later ones overriding earlier ones:
 }
 ```
 
-- `editorMode`: `vim` gives the input box normal and insert modes (`h j k l w b 0 $`, `x dd dw D C cw cc`, `i a I A o O`).
+- `editorMode`: `vim` gives the input box normal and insert modes: moving (`h l w b e 0 $ j k`), inserting (`i a I A o O`), deleting, changing and copying (`x D C`, and `d c y` with a motion or doubled), pasting (`p P`), `u` to undo the last change made in normal mode, and a count before any of them (`3w`, `2dd`, `d2w`). There is no visual mode.
 - `theme`: `default`, `light` (for a light background) or `none`. The `NO_COLOR` environment variable also turns colour off.
 - `statusLine.command`: the first line it prints replaces the right side of the footer. It gets the model, folder, mode, context use and session as JSON on stdin.
 

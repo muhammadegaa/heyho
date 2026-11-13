@@ -70,6 +70,38 @@ test("an approval waits for an answer and then lets the work continue", async ()
   expect(s.live.activity?.label).toBe("running npm test");
 });
 
+test("vim normal mode: counts, the e motion, copy and paste, and undo", async () => {
+  const { normalKey } = await import("../src/tui/vim.ts");
+  type S = NonNullable<ReturnType<typeof normalKey>>;
+  const run = (value: string, cursor: number, keys: string) => {
+    let s: S = { edit: { value, cursor }, insert: false, pending: "" };
+    for (const k of keys) s = normalKey(s, k)!;
+    return s;
+  };
+  expect(run("one two three four", 0, "3w").edit.cursor).toBe(14);
+  expect(run("one two three four", 0, "e").edit.cursor).toBe(2);
+  expect(run("one two three four", 0, "2e").edit.cursor).toBe(6);
+  expect(run("one two three four", 0, "d2w").edit.value).toBe("three four");
+  expect(run("one two three four", 0, "2dw").edit.value).toBe("three four");
+  expect(run("one two three four", 4, "de").edit.value).toBe("one  three four");
+  expect(run("one two three four", 0, "3x").edit.value).toBe(" two three four");
+  expect(run("a\nb\nc\nd", 2, "2dd").edit).toEqual({ value: "a\nd", cursor: 2 });
+  expect(run("a\nb\nc", 4, "dd").edit.value).toBe("a\nb");
+  expect(run("one two", 0, "c2w")).toMatchObject({ edit: { value: "", cursor: 0 }, insert: true });
+  // The count 10 uses 0 as a digit; a lone 0 is still "start of line".
+  expect(run("abcdefghijklmnop", 0, "10l").edit.cursor).toBe(10);
+  expect(run("abc", 2, "0").edit.cursor).toBe(0);
+  // Copy a word and paste it; cut a line and paste it below another.
+  expect(run("one two", 0, "yw$p").edit.value).toBe("one twoone ");
+  expect(run("a\nb\nc", 0, "ddp").edit.value).toBe("b\na\nc");
+  expect(run("a\nb", 0, "yyP").edit.value).toBe("a\na\nb");
+  expect(run("abc", 0, "xp").edit.value).toBe("bac");
+  // u takes back changes one at a time, and does nothing when there are none.
+  expect(run("one two three", 0, "dwdwu").edit.value).toBe("two three");
+  expect(run("one two three", 0, "dwdwuu").edit.value).toBe("one two three");
+  expect(run("one", 0, "u").edit.value).toBe("one");
+});
+
 test("vim normal mode: moving, entering insert, deleting and changing", async () => {
   const { normalKey } = await import("../src/tui/vim.ts");
   const run = (value: string, cursor: number, keys: string) => {
@@ -83,7 +115,7 @@ test("vim normal mode: moving, entering insert, deleting and changing", async ()
   expect(run("fix the bug", 5, "0").edit.cursor).toBe(0);
   expect(run("fix the bug", 0, "$").edit.cursor).toBe(11);
   expect(run("fix the bug", 4, "dw").edit).toEqual({ value: "fix bug", cursor: 4 });
-  expect(run("fix the bug", 4, "cw")).toEqual({ edit: { value: "fix  bug", cursor: 4 }, insert: true, pending: "" });
+  expect(run("fix the bug", 4, "cw")).toMatchObject({ edit: { value: "fix  bug", cursor: 4 }, insert: true, pending: "" });
   expect(run("fix the bug", 4, "x").edit.value).toBe("fix he bug");
   expect(run("fix the bug", 4, "D").edit.value).toBe("fix ");
   expect(run("one\ntwo\nthree", 5, "dd").edit).toEqual({ value: "one\nthree", cursor: 4 });

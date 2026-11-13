@@ -986,6 +986,17 @@ test("vim keys: Esc enters normal mode, motions and deletes work, i returns to t
   await s.key("Escape");
   await s.type("dd");
   await s.wait(/describe a task/);
+  // A count, copy and paste, and undo, through the real keyboard.
+  await s.type("ione two three");
+  await s.key("Escape");
+  await s.type("0d2w");
+  await s.wait(/› three\s*$/m);
+  await s.type("u");
+  await s.wait(/› one two three\s*$/m);
+  await s.type("yyp");
+  await s.wait(/› one two three\n\s+one two three/);
+  await s.type("dddd");
+  await s.wait(/describe a task/);
   // As in vim, Esc leaves the cursor on the last character typed, so x deletes it.
   await s.type("iabcd");
   await s.key("Escape");
