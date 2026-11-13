@@ -69,6 +69,12 @@ test("a compound command is judged part by part, and anything that can't be take
   expect(splitCommand("npm test > out.txt")).toBeNull();
   expect(splitCommand("echo $(whoami)")).toBeNull();
   expect(splitCommand("sleep 5 &")).toBeNull();
+  // Inside single quotes nothing is special, so a regex with backslashes is still a plain grep.
+  expect(splitCommand("grep -rn '\\bsecs\\b' src/")).toEqual(["grep -rn '\\bsecs\\b' src/"]);
+  expect(splitCommand("grep '<div>' a.html | head -3")?.length).toBe(2);
+  expect(splitCommand("grep 'x' > out.txt")).toBeNull();
+  expect(splitCommand(`echo "it's $(whoami)'s"`)).toBeNull();
+  expect(splitCommand(`echo "a\\'" 'b'`)).toBeNull();
   const a = new Approvals("ask", undefined, "/work/repo");
   expect(a.allowed("bash", "cd /work/repo && git status | head -3")).toBe(true);
   expect(a.allowed("bash", "cd /work/repo && npm test")).toBe(false);

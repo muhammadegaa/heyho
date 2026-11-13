@@ -289,7 +289,7 @@ test("a reply stopped before it finishes reports no steps or speed from the turn
 
 test("in a narrow window (28 columns) the rules and footer fit the width and nothing spills onto a second line", async () => {
   s = await open({ cols: 28, steps: [EDIT, reply("Done.")] });
-  const lines = () => s.screen().split("\n");
+  const lines = () => s!.screen().split("\n");
   // A rule drawn for a wider screen wraps into a full row and a short leftover row.
   expect(lines().filter((l) => /^─+$/.test(l)).every((l) => l.length === 28)).toBe(true);
   expect(lines().filter((l) => /⏸/.test(l)).length).toBe(1);

@@ -63,12 +63,29 @@ const hostMatches = (pattern: string, host: string) => (pattern.startsWith("*.")
 
 // A command with none of these can't substitute or redirect, so it can be judged from its words.
 const OPAQUE = /[`<>\n\\]|\$\(|\$\{/;
-export const isSimple = (command: string) => !OPAQUE.test(command) && splitCommand(command)?.length === 1;
+// The command with the contents of its single-quoted strings removed: the shell reads those
+// literally, so a backslash or an angle bracket in them (a grep pattern, say) does nothing.
+function unquoted(command: string): string {
+  let out = "";
+  let quote = "";
+  for (const ch of command) {
+    if (quote) {
+      if (ch === quote) quote = "";
+      if (quote !== "'") out += ch;
+    } else {
+      if (ch === '"' || ch === "'") quote = ch;
+      out += ch;
+    }
+  }
+  return out;
+}
+const opaque = (command: string) => OPAQUE.test(unquoted(command));
+export const isSimple = (command: string) => !opaque(command) && splitCommand(command)?.length === 1;
 
 // Splits "a && b | c; d" into its commands. null when the command can't be taken apart
 // safely (substitution, redirection, a background job, unbalanced quotes).
 export function splitCommand(command: string): string[] | null {
-  if (OPAQUE.test(command)) return null;
+  if (opaque(command)) return null;
   const parts: string[] = [];
   let current = "";
   let quote = "";
