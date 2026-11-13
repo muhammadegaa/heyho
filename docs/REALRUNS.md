@@ -68,7 +68,7 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 49 | Feature, multi-file | big | `add a /stats command that shows tool call counts for this session, with a test` | Command, help entry and test added; suites pass | pass. `/stats` added to the command list and the handler, with an e2e test modelled on its neighbours: 14 steps, 13 lines changed in 2 files. Type check clean and the new test passes (both checked outside heyho). The checklist's last item was left unticked although the test had been run |
 | 50 | Refactor | big | `move the secs helper out of ui.ts into its own file and update imports` | Type check and tests pass after | pass. The helper moved to `src/secs.ts`, imported in three files, both copies removed: 4 minutes, 19 steps. Type check clean and 86 tests pass (checked outside heyho). The model kept a checklist without being asked and ticked every item |
 
-Pass 1 finished on 2026-11-13: 50 scenarios run, 18 defects found and fixed, each with a test except the session step limit (a default). 31 scenarios passed first time. Three fixes are not yet confirmed on the real model and are the first things pass 2 checks: repeated shortening in one turn (39), the Stop hook's note on screen (27), and the MCP call with missing arguments answered without asking (29).
+Pass 1 finished on 2026-11-13: 50 scenarios run, 18 defects found and fixed, each with a test except the session step limit (a default). 36 scenarios passed first time. Three fixes are not yet confirmed on the real model and are the first things pass 2 checks: repeated shortening in one turn (39), the Stop hook's note on screen (27), and the MCP call with missing arguments answered without asking (29).
 
 ## Defects found
 
