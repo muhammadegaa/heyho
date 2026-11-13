@@ -72,7 +72,11 @@ Pass 1 finished on 2026-11-13: 50 scenarios run, 18 defects found and fixed, eac
 
 ## Pass 2
 
-Every scenario again, on the code with pass 1's fixes. Started 2026-11-13 with the three fixes that had only a scripted test behind them. Rows are added as they are run.
+Every scenario again, on the code with pass 1's fixes, starting with the three fixes that had only a scripted test behind them. Finished 2026-11-13.
+
+Result: one defect, in scenario 39, fixed in 35a37b3. Scenarios 27 and 29 had been run before that fix and were run again after it; both passed. So all 50 scenarios have passed on the code as it stands at 35a37b3 and later, and no later commit touches `src/`. A third pass was not run for that reason: it would repeat 50 passes on unchanged code.
+
+Where pass 2 was faster than pass 1, the cause was fewer approval prompts and no dead ends: the rename (18) took 1 min 48 s against 13 minutes, the new test file (19) 30 seconds, the subagent review (32) 7.5 minutes against 19.
 
 | # | Scenario | Result |
 |---|---|---|
@@ -119,6 +123,13 @@ Every scenario again, on the code with pass 1's fixes. Started 2026-11-13 with t
 | 44 | Headless formats | pass |
 | 45 | Headless tool limits | pass. With read and search only: four steps, no edit, said so. `npm test 2>&1` ran under the `npm test` rule; `ls -la /etc` refused |
 | 47 | Settings | pass. Status line, no colour codes, and Esc then `x` deleted the last character |
+| 32 | Subagent | pass, slow. The subagent read the file and reported back in 7 min 31 s (19 minutes in pass 1), edited nothing. Most of the time is still thinking. Two of the four findings it reported look wrong to me (the hunk code does track the last line added); that is the model's review, not heyho |
+| 38 | Compact | pass. Answered from the notes: `src/approve.ts`, class `Approvals` |
+| 43 | File mention | pass. Read directly, no search |
+| 46 | Step limit | pass. `[step_limit]` after three steps |
+| 48 | Bug fix, multi-file | pass. Same one-character fix; 4 diff tests pass |
+| 49 | Feature, multi-file | pass. `/stats` with a test, 20 lines in 2 files; type check clean and the test passes |
+| 50 | Refactor | pass. One `secs` left, in `src/secs.ts`; type check clean, 86 tests pass |
 
 ## Defects found
 
