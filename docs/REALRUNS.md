@@ -70,6 +70,16 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 
 Pass 1 finished on 2026-11-13: 50 scenarios run, 18 defects found and fixed, each with a test except the session step limit (a default). 36 scenarios passed first time. Three fixes are not yet confirmed on the real model and are the first things pass 2 checks: repeated shortening in one turn (39), the Stop hook's note on screen (27), and the MCP call with missing arguments answered without asking (29).
 
+## Pass 2
+
+Every scenario again, on the code with pass 1's fixes. Started 2026-11-13 with the three fixes that had only a scripted test behind them. Rows are added as they are run.
+
+| # | Scenario | Result |
+|---|---|---|
+| 27 | Stop hook | pass. The screen showed "A Stop hook sent the model back to work: npm test is failing…"; tests passed at the end |
+| 29 | MCP, real server | pass. A call with no arguments got the schema back with no approval prompt; only the real call asked |
+| 39 | Automatic shortening | defect, then pass. The task was changed so it can finish: one line written to a file after each of 36 files. First run: after 20 files the conversation was shortened and the model's whole notes were one line naming its next step, so the task was lost (35a37b3). Rerun: shortened twice in one turn, all 36 lines written with no duplicates, and the model said DONE with a total. 15 minutes |
+
 ## Defects found
 
 | Scenario | Defect | Fix | Test |
@@ -92,6 +102,7 @@ Pass 1 finished on 2026-11-13: 50 scenarios run, 18 defects found and fixed, eac
 | 39 | A second fill of the context in one turn ended the turn | e810d49: up to three shortenings a turn | `e2e/headless.test.ts` "a long task is shortened more than once in one run and still finishes" |
 | 45 | With `--tools` the model was not told which tools it had, and looped on the ones it did | 9148c14 | `e2e/headless.test.ts` "--tools limits which tools the model is offered" |
 | 47 | With vim keys, Esc left the cursor past the last character, so `x` deleted nothing | 87a834a | `e2e/screen.test.ts` "vim keys: Esc enters normal mode, motions and deletes work, i returns to typing" |
+| 39 (pass 2) | After shortening, the notes left out the task itself | 35a37b3: the user's requests are carried over by heyho in their own words, through any number of shortenings | `test/loop.test.ts` "shortening keeps the system prompt and the model's notes" |
 
 ## Model behaviour recorded
 
