@@ -99,6 +99,18 @@ Every scenario again, on the code with pass 1's fixes. Started 2026-11-13 with t
 | 18 | Failed edit recovery | pass. 1 min 48 s against 13 minutes in pass 1; the only approval asked was `bun run typecheck`. No `secs` left, type check clean |
 | 19 | Write a new file | pass. 30 seconds; asked only for `bun test`; both tests pass |
 | 20 | Checklist | pass. 45 steps, all six checklist items ticked, `--quiet` works (reply on stdout, 0 bytes on stderr, type check clean). The clock shows 117 minutes because the Mac slept for 88 of them; about 29 minutes of work. `find src -type f \| sort` still asked (`sort` is one of the open questions) |
+| 21 | Question tool | pass, model. Three names offered in plain text again, not through the menu |
+| 22 | Background command | pass. The model again set the background flag and added `&`; the job was tracked, answered 200, and `/tasks stop 1` ended it |
+| 23 | Web fetch | pass. Title given from the fetch alone |
+| 24 | Fetch rule | pass. No second prompt |
+| 25 | Hook blocks a tool | pass |
+| 26 | Hook after edit | pass |
+| 28 | Folder trust | pass. No, Yes, then remembered |
+| 30 | MCP rule | pass (run with 29) |
+| 31 | Skill | pass |
+| 33 | Custom command | pass. Nothing edited |
+| 34 | Project instructions | pass. With "Always answer in French", the answer was in French |
+| 35 | Notes across sessions | pass. Note written and used after `/clear` in one step. Before writing, the model ran `ls` on the notes folder, which asked because the folder is outside the project |
 
 ## Defects found
 
