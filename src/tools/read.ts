@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import { fail, ok, rel, resolvePath, stamp, type Tool } from "./types.ts";
 
 const DEFAULT_LINES = 250;
@@ -26,6 +27,7 @@ export const read: Tool = {
     try {
       st = statSync(abs);
     } catch {
+      if (resolve(ctx.root, String(args.path)) === ctx.notesFile) return fail("There are no notes yet. To keep one, create this file with the write tool; its folder is made for you.");
       return fail(`${args.path} does not exist. Use search with a glob to find the right path.`);
     }
     if (st.isDirectory()) {

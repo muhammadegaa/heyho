@@ -22,6 +22,16 @@ beforeEach(() => {
 });
 
 describe("read", () => {
+  test("a notes file that is not there yet says to create it, not to go looking for it", async () => {
+    // Qwen3.6, asked to remember something, read the missing file and then ran find, mkdir and ls.
+    ctx.notesFile = join(ctx.stateDir, "memory", "NOTES.md");
+    const res = await read.run({ path: ctx.notesFile }, ctx);
+    expect(res.ok).toBe(false);
+    expect(res.text).toMatch(/no notes yet/i);
+    expect(res.text).toMatch(/write/);
+    expect(res.text).not.toMatch(/glob/);
+  });
+
   test("numbers lines and pages", async () => {
     w("a.txt", Array.from({ length: 300 }, (_, i) => `line ${i + 1}`).join("\n") + "\n");
     const first = await read.run({ path: "a.txt" }, ctx);

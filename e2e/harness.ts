@@ -65,6 +65,8 @@ export async function open(opts: { steps?: Step[]; files?: Record<string, string
     close: () => tmux("kill-session", "-t", name),
   };
   await s.wait(/describe a task|Type a task|Reopen a session|sets hooks, allow rules or MCP servers/);
+  // The first frame can be on screen a moment before the keyboard is being read; a key sent in that gap is lost.
+  await sleep(200);
   return s;
 }
 
