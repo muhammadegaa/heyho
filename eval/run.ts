@@ -11,7 +11,8 @@ import { PROFILES } from "../src/profiles.ts";
 import { seatbeltProfile } from "../src/tools/bash.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const WALL_LIMIT_MS = 20 * 60_000;
+// Generation runs about four times slower with the display off; EVAL_WALL_MIN scales the limit to match.
+const WALL_LIMIT_MS = Number(process.env.EVAL_WALL_MIN ?? 20) * 60_000;
 const VERIFY_LIMIT_MS = 120_000;
 const PI_BIN = process.env.PI_BIN ?? join(homedir(), ".heyho/baselines/pi/node_modules/.bin/pi");
 

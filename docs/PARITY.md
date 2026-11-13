@@ -75,8 +75,7 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 
 ### Still open
 
-1. The eval check for the four new tools on task 07 (see below). It needs the Mac awake for about 25 minutes.
-2. Image paste. The local models in use take text only, so there is nothing to send an image to.
+1. Image paste. Out of scope for now: the local models in use take text only, so there is nothing to send an image to.
 
 Smaller differences that remain inside closed rows: code colouring is by rough rules, not a grammar per language; vim mode covers the common keys, not registers, counts or visual mode; there is one colour theme plus "none"; MCP is stdio only; the session picker has no preview pane; there is no full-screen mode with mouse scrolling.
 
@@ -84,7 +83,7 @@ Different by design, not planned: a second model that reviews each action (Claud
 
 Regression check on the real model after these changes (Qwen3.6, 2026-11-13, two runs each): task 01 2/2, task 08 2/2, task 07 1/2, against 1/3 on 07 before. One 07 run stopped at the 40-step limit, which no earlier 07 run did.
 
-The four new tools are provisional. They fit the 1,500-token budget for the fixed prompt (1,497). With them, tasks 01 and 08 passed 2/2 each on Qwen3.6. Task 07 was not measured: the Mac slept and both runs sat until the time limit with nothing processed. Until 07 is run on an awake machine, there is no evidence either way on the task where the model's steps matter most.
+The four new tools stay. They fit the 1,500-token budget for the fixed prompt (1,497). With them on Qwen3.6, tasks 01 and 08 passed 2/2 each and task 07 passed 2/3, against 1/2 and 1/3 on 07 before them. The model used the checklist in every 07 run. These are small samples: they show no loss, not a gain. The 07 runs were made with the display off, where generation is about four times slower, so the time limit was raised to 80 minutes (`EVAL_WALL_MIN`); the runs finished in 12 to 23 minutes each, and their wall times are not comparable with earlier ones.
 
 Limits of this evidence: the tests run in tmux only, so other terminal programs are not covered; and nothing here measures how well a local model uses these features.
 
