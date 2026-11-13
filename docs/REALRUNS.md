@@ -111,6 +111,14 @@ Every scenario again, on the code with pass 1's fixes. Started 2026-11-13 with t
 | 33 | Custom command | pass. Nothing edited |
 | 34 | Project instructions | pass. With "Always answer in French", the answer was in French |
 | 35 | Notes across sessions | pass. Note written and used after `/clear` in one step. Before writing, the model ran `ls` on the notes folder, which asked because the folder is outside the project |
+| 36 | Undo | pass |
+| 37 | Rewind | pass. Back to CODEA only, message in the input box |
+| 40 | Resume | pass. Reopened by name; the follow-up was answered correctly from the earlier conversation this time |
+| 41 | Queue and interrupt | pass |
+| 42 | Shell escape | pass. Right hash, nothing run |
+| 44 | Headless formats | pass |
+| 45 | Headless tool limits | pass. With read and search only: four steps, no edit, said so. `npm test 2>&1` ran under the `npm test` rule; `ls -la /etc` refused |
+| 47 | Settings | pass. Status line, no colour codes, and Esc then `x` deleted the last character |
 
 ## Defects found
 
