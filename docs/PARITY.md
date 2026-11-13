@@ -11,30 +11,64 @@ Status words: **same** (no difference a user would notice), **partial** (heyho d
 
 Not covered: Claude Code's IDE, desktop, web and cloud features, and anything that depends on a hosted service.
 
-## Since this comparison
+## Ledger: what has been closed since, and the test that shows it
 
-The Ink screen (branch `ui`, after d2aab3c) changed the rows below. Each was checked in tmux, on the scripted server and on Qwen3.6. The tables that follow still describe the run before it.
+The tables from section 1 on describe the first run, on 2026-11-12, before any of this. Every row here is covered by an automated test: `e2e/screen.test.ts` drives the real screen in a tmux pane against a scripted server and reads the rendered rows (66 cases); `test/` holds the unit tests (71). A row is listed only when its test passes. The scripted server stands in for the model, so these show what heyho does with a given reply, not what a model chooses to reply.
 
-| Row | Now |
-|---|---|
-| Layout | A fixed input box with the transcript scrolling above it, and a footer with mode, model and context use |
-| Model text | Word-wrapped with a hanging indent; the line being written is shown as it grows |
-| Approvals | A panel with a line-numbered diff and a numbered menu; one key answers; Tab or option 3 types what to do instead |
-| Diffs | A real line diff with three lines of context; unchanged lines in the middle stay context |
-| Command output | Collapsed to a count when the command passes; Ctrl+O prints the last command's full output; a failed command shows its last 15 lines |
-| Plan mode | Ends in "Carry out this plan?" with choices that switch mode and start the work; read-only `find` is allowed |
-| Rewind | `/rewind` or Esc Esc lists earlier messages and restores files, conversation or both; the message returns to the input box. Checkpoints are still in memory only |
-| `/` and `@` | Live menus that filter as you type |
-| Queued messages | Shown above the input box until sent |
-| `/resume` | A picker; sessions are listed under what the user first typed, also after `/compact` |
-| `/context` | A bar, message and model-call counts, and tool-call counts |
-| New: `/diff` | Shows `git diff` |
-| History | Kept per project |
-| Defects 1–9 | Fixed, except 8 in part: `--continue` now skips headless runs |
+| Area | Claude Code behaviour matched | Test (name starts with) |
+|---|---|---|
+| Layout | Fixed input box, transcript above, footer with mode, model, context | start: header, input box… |
+| Resize | Clean redraw at any width, in any state | resize: narrower then wider…; resize with a transcript…; resizing while an approval is open…; resizing while a reply streams… |
+| Small windows | Usable at 44×9; footer on one line at every width | a very small window…; the footer is one line at every width… |
+| Replies | Word-wrapped; tables, code, quotes, links drawn | a reply with a table…; a table is drawn with aligned columns… |
+| Approvals | Numbered panel, line-numbered diff, one key answers, arrows and Enter, Esc declines | edit approval: numbered diff…; edit approval: arrow keys… |
+| Say what to do instead | Tab at an approval takes a typed correction | edit approval: Tab takes a typed correction… |
+| Don't ask again | For edits this session; for a command prefix, saved per project | 'don't ask again for edits'…; a prefix rule… |
+| Command output | Collapsed when it passes, Ctrl+O expands, failures shown | command approval, collapsed output…; a failing command… |
+| Modes | Shift+Tab cycle; accept-edits including file commands; plan with an approval menu; refuse-what-isn't-allowed | Shift+Tab cycles…; auto mode…; auto mode runs file commands…; plan mode…; dontask mode… |
+| Rules | allow, ask and deny rules; deny wins in every mode; deny on read hides the file from search | rules: deny beats ask beats allow… (unit); a deny rule refuses an edit…; a deny rule stops a file being read…; an ask rule asks even in auto mode |
+| Chained commands | Judged part by part; one saved rule per part | a compound command is judged part by part… (unit); a chained command offers one rule per part… |
+| Settings files | User and project files; mode, profile, step limit and rules; a broken file is reported | settings files merge… (unit); the mode can come from settings…; an allow rule from the project's settings…; a settings file that is not valid JSON… |
+| `/permissions` | Lists rules with their source; adds and removes | /permissions adds a deny rule… |
+| Menus | `/` and `@` filter as you type | slash menu filters…; @ menu lists files… |
+| Multi-line input | Backslash-Enter, Ctrl+J, paste kept whole | a message can span lines… |
+| History | Up and Down; Ctrl+R search; kept per project | Up recalls the previous message…; Ctrl+R searches… |
+| Editor, stash, help | Ctrl+G opens `$EDITOR`; Ctrl+S sets a draft aside; `?` shows help | Ctrl+G opens…; Ctrl+S sets a draft aside…; ? on an empty box… |
+| `!` shell | Runs it, shows it, tells the model | ! runs a shell command… |
+| Queue | Messages typed during a run are shown and sent after | a message typed during a run is queued… |
+| Interrupt | Esc keeps what was written; Ctrl+C during an approval ends the run cleanly | Esc stops a reply in progress…; Ctrl+C during an approval… |
+| Rewind | Any earlier message; files, conversation or both; survives a restart | rewind restores the file and the conversation…; rewind still restores a file after heyho is closed… |
+| Sessions | Names; `--continue`; `--resume [name]`; searchable picker; mode restored | a session can be named…; --resume with no name…; the mode a session was in… |
+| `/clear`, `/resume`, `/compact` listing | Session listed under its first message | /clear then /resume reopens…; a session reloads its messages… (unit) |
+| Commands | `/help`, `/context`, `/status`, `/export`, `/copy`, `/diff`, `/undo`, `/rename`, `/memory` | /help lists…; /status shows…; /export writes…; /copy puts…; /undo takes back…; /memory lists… |
+| Instruction files | Yours, folders above, the project's, a private one; `@file` imports; subfolder files on first read | instruction files load most general first… (unit); a line that is only @file… (unit); a subfolder's AGENTS.md is given… |
+| Notes the agent keeps | Written without asking, loaded next session | the agent can write its notes file… |
+| Leaving | Ctrl+C clears, twice quits | Ctrl+C clears typed text… |
+| No server | A message with the command to start one | no server: a plain message… |
 
-The first hands-on try of this screen failed at once: resizing the window left stale lines and lost the header. It had been checked by hand in one window size only. The screen now has its own test suite (`bun run test:ui`, 41 cases) that drives it in tmux. Writing it found that bug and two more: Ctrl+C during an approval left the run stuck, and the footer wrapped at some widths. Tables, quotes and links in replies were also printed as raw markdown and are now drawn. The suite runs in tmux only; other terminal programs are not covered.
+### Found by the tests and fixed
 
-Still open from section 13: checkpoints on disk, session names, deny rules and a settings file, the tools in group E, instruction files beyond the root, and everything in group G. Also not done in the new screen: Ctrl+R history search, editing the prompt in `$EDITOR`, vim keys, tables in markdown, and syntax highlighting.
+- Resizing left stale lines and lost the header (first hands-on try; the screen had been checked by hand at one size only).
+- Ctrl+C during an approval left the run waiting forever.
+- The footer wrapped onto two lines at some widths.
+- A wildcard rule such as `npm test *` also covered whatever was chained or redirected after it (`npm test && rm -rf .`). Caught by a unit test before it shipped.
+- Tables, quotes and links were printed as raw markdown.
+
+### Still open
+
+Not started, in the order planned:
+
+1. Headless: read the task from stdin, a stream of JSON events, `--resume` in headless, tool allow and deny flags, system prompt flags.
+2. Custom slash commands from markdown files.
+3. Tools, each to be kept only if an eval run shows no loss: background commands, a task list, a question tool, web fetch.
+4. Hooks on lifecycle events.
+5. MCP servers.
+6. Skills and subagents.
+7. In the screen: syntax highlighting, vim keys, a configurable status line, themes, image paste.
+
+Different by design, not planned: a second model that reviews each action (Claude Code's `auto` mode). heyho's no-prompt mode contains commands with the macOS sandbox instead. Out of scope: IDE, desktop, web and cloud features.
+
+Limits of this evidence: the tests run in tmux only, so other terminal programs are not covered; and nothing here measures how well a local model uses these features.
 
 ## 1. What was run, step by step
 
