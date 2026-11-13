@@ -18,7 +18,7 @@ const r = (p: string) => readFileSync(join(ctx.root, p), "utf8");
 beforeEach(() => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "heyho-test-")));
   const stateDir = mkdtempSync(join(tmpdir(), "heyho-state-"));
-  ctx = { root, stateDir, seen: new Map(), approve: async () => true, sandbox: { enabled: false, noNet: false }, outCount: { n: 0 } };
+  ctx = { root, stateDir, seen: new Map(), approve: async () => true, sandbox: { enabled: false, noNet: false }, outCount: { n: 0 }, jobs: [] };
 });
 
 describe("read", () => {

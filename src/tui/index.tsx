@@ -13,6 +13,8 @@ export async function runTui(opts: AppOptions, version: string, resume?: string 
     note: (text, tone) => store.note(text, tone),
     changed: store.changed,
     output: store.output,
+    question: store.question,
+    todos: store.todos,
   });
   store.root = app.root;
   await app.start();
@@ -26,4 +28,5 @@ export async function runTui(opts: AppOptions, version: string, resume?: string 
   if (app.resumed) store.note(`Continuing the session from ${app.resumed.when.toLocaleString()}: "${app.resumed.first}"`, "dim");
   const ink = render(<Screen app={app} store={store} version={version} pickSession={resume !== undefined && !named} />, { exitOnCtrlC: false, patchConsole: false });
   await ink.waitUntilExit();
+  app.shutdown();
 }

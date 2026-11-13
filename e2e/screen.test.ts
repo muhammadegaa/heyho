@@ -768,3 +768,75 @@ test("commands in .claude/commands work too, and /help lists custom commands", a
   await s.send("/ship");
   await s.wait(/Shipped\./);
 });
+
+// ---- tools beyond the core five ----
+
+test("the model's checklist is shown as it changes, and Ctrl+T hides it", async () => {
+  const list = (a: string, b: string) => call("todo", { items: [`[${a}] read the code`, `[${b}] fix the bug`] });
+  s = await open({ steps: [list("~", " "), { ...list("x", "~"), slow: true, text: "Working through it now.\n" }, reply("Finished.\n")] });
+  await s.send("fix it");
+  await s.wait(/◐ read the code\n\s+☐ fix the bug/);
+  await s.wait(/☑ read the code\n\s+◐ fix the bug/);
+  await s.wait(/Finished\./);
+  await s.key("C-t");
+  await s.wait(/Finished\.(?![\s\S]*☑)/);
+});
+
+test("the model can ask a question: options to pick, or an answer to type", async () => {
+  s = await open({ steps: [call("ask", { question: "Which test runner?", options: ["node:test", "vitest"] }), call("ask", { question: "What should the file be called?" }), reply("Using both answers.\n")] });
+  await s.send("add tests");
+  const asked = await s.wait(/Which test runner\?/);
+  expect(asked).toMatch(/❯ 1\. node:test/);
+  expect(asked).toMatch(/3\. Something else/);
+  await s.key("2");
+  await s.wait(/What should the file be called\?[\s\S]*Your answer:/);
+  await s.send("cart.test.js");
+  await s.wait(/Using both answers\./);
+  const requests = JSON.parse(readFileSync(`${s.root}-requests.json`, "utf8")) as { messages: { role: string; content: string }[] }[];
+  const answers = requests.at(-1)!.messages.filter((m) => m.role === "tool").map((m) => m.content);
+  expect(answers).toEqual(["The user answered: vitest", "The user answered: cart.test.js"]);
+});
+
+test("fetching a page asks first, returns its text, and can be allowed for the host", async () => {
+  s = await open({ steps: [call("fetch", { url: "$SERVER/docs" }), call("fetch", { url: "$SERVER/other" }), reply("Read both.\n")] });
+  await s.send("read the docs");
+  const panel = await s.wait(/Fetch this page\?/);
+  expect(panel).toMatch(/Fetch a web page/);
+  expect(panel).toMatch(/2\. Yes, and don't ask again in this project for pages on 127\.0\.0\.1/);
+  await s.key("2");
+  await s.wait(/Read both\./);
+  const requests = JSON.parse(readFileSync(`${s.root}-requests.json`, "utf8")) as { messages: { role: string; content: string }[] }[];
+  const pages = requests.at(-1)!.messages.filter((m) => m.role === "tool").map((m) => m.content);
+  expect(pages.length).toBe(2);
+  expect(pages[0]).toMatch(/^200 OK · http:\/\/127\.0\.0\.1:\d+\/docs\nDocs\nThe answer is 42 & nothing else\.$/);
+});
+
+test("a background command shows in the footer and /tasks, can be stopped, and does not outlive heyho", async () => {
+  s = await open({ args: ["--mode", "yolo-not-a-mode"].slice(2), steps: [call("bash", { command: "sleep 300", background: true }), reply("Server is up.\n")] });
+  await s.send("start the server");
+  await s.wait(/Run this command\?/);
+  await s.key("1");
+  await s.wait(/Server is up\./);
+  await s.wait(/1 in background/);
+  await s.send("/tasks");
+  const listed = await s.wait(/1\s+running\s+sleep 300/);
+  const pid = Number(readFileSync(`${s.root}-requests.json`, "utf8").match(/process group (\d+)/)![1]);
+  expect(listed).toMatch(/\.log/);
+  expect(() => process.kill(pid, 0)).not.toThrow();
+  await s.send("/exit");
+  await s.wait(/heyho has exited/);
+  await new Promise((r) => setTimeout(r, 300));
+  expect(() => process.kill(pid, 0)).toThrow();
+});
+
+test("/tasks stop ends a background command", async () => {
+  s = await open({ steps: [call("bash", { command: "sleep 300", background: true }), reply("Up.\n")] });
+  await s.send("start it");
+  await s.wait(/Run this command\?/);
+  await s.key("1");
+  await s.wait(/1 in background/);
+  await s.send("/tasks stop 1");
+  await s.wait(/Stopped job 1/);
+  await s.send("/tasks");
+  await s.wait(/1\s+ended\s+sleep 300/);
+});

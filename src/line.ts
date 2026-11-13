@@ -36,7 +36,14 @@ function build(opts: AppOptions, ui: Renderer, input: () => Input, tap?: (e: Age
     }
   };
   const onEvent = tap ? (e: AgentEvent) => (tap(e), ui.onEvent(e)) : ui.onEvent;
-  return new App(opts, { onEvent, ask, note: (text, tone) => ui.note(tone === "error" ? ui.colors.red(text) : tone === "warn" ? ui.colors.yellow(text) : tone === "dim" ? dim(text) : text), changed: (c) => ui.changed(c), output: (c) => ui.output(c) });
+  const question = async (text: string, options: string[]) => {
+    const resume = ui.pause();
+    process.stderr.write(`\n${bold(text)}\n${options.map((o, i) => `  ${i + 1}. ${o}`).join("\n")}${options.length ? "\n" : ""}`);
+    const a = (await input().answer(`${dim(options.length ? "A number, or your own answer: " : "Your answer: ")}`)).trim();
+    resume();
+    return options[Number(a) - 1] ?? a;
+  };
+  return new App(opts, { onEvent, ask, question, note: (text, tone) => ui.note(tone === "error" ? ui.colors.red(text) : tone === "warn" ? ui.colors.yellow(text) : tone === "dim" ? dim(text) : text), changed: (c) => ui.changed(c), output: (c) => ui.output(c) });
 }
 
 export type Format = "text" | "json" | "stream-json";
@@ -71,6 +78,7 @@ export async function runHeadless(opts: AppOptions, task: string, out: { format:
   if (out.format === "json") console.log(JSON.stringify(summary, null, 2));
   emit({ type: "result", ...summary });
   input?.close();
+  app.shutdown();
   process.exit(result.status === "done" ? 0 : result.status === "error" ? 1 : 2);
 }
 
@@ -157,5 +165,6 @@ export async function runLineMode(opts: AppOptions) {
     }
     await run(line);
   }
+  app.shutdown();
   prompt().close();
 }

@@ -2,7 +2,7 @@
 // left to the terminal's own scrollback; what is still changing lives in `live`.
 import type { ApprovalAnswer, ApprovalRequest, Outcome } from "../app.ts";
 import type { AgentEvent } from "../loop.ts";
-import type { Change } from "../tools/types.ts";
+import type { Change, Todo } from "../tools/types.ts";
 import { Markdown, outputTail, paint, renderDiff, STOP_HELP, type RunInfo } from "../ui.ts";
 
 const p = paint(true);
@@ -18,7 +18,11 @@ export type Item = { id: number; mark: string; text: string; gap?: boolean };
 export type Activity = { label: string; detail: string; since: number };
 export type Pending = { request: ApprovalRequest; resolve: (a: ApprovalAnswer) => void };
 
+export type Asking = { question: string; options: string[]; resolve: (answer: string) => void };
+
 export type Live = {
+  todos: Todo[];
+  asking: Asking | null; // the model's question for the user
   activity: Activity | null;
   partial: string; // the line of the reply still being written
   pending: Pending | null;
@@ -31,10 +35,11 @@ const OUTPUT_EXPANDED = 200;
 export class Store {
   root = ""; // paths under it are shown relative
   items: Item[] = [];
-  live: Live = { activity: null, partial: "", pending: null, queue: [] };
+  live: Live = { todos: [], asking: null, activity: null, partial: "", pending: null, queue: [] };
   private listeners = new Set<() => void>();
   private nextId = 1;
   private md = new Markdown(p);
+  private p = (s: string) => p.cyan(s);
   private replyStarted = false;
   private thinkStart = 0;
   private received = 0;
@@ -164,6 +169,7 @@ export class Store {
           const counts = d ? `  ${p.green(`+${d.added}`)}${d.removed ? p.red(` −${d.removed}`) : ""}` : "";
           this.add(p.green("⏺"), `${p.bold(e.name)} ${arg}${counts}${d ? "\n" + d.lines.join("\n") : ""}`);
         } else {
+          if (e.name === "todo" || e.name === "ask") break; // the checklist and the answer are shown as they are
           const got = lines.length === 1 ? oneLine(lines[0], 100) : `${e.name === "read" ? lines.length - 1 : lines.length} lines`;
           this.add(p.green("⏺"), `${head}  ${p.dim(got)}`);
         }
@@ -195,6 +201,26 @@ export class Store {
     parts.push(p.dim([`worked for ${secs(info.wallMs)}`, `${info.steps} step${info.steps === 1 ? "" : "s"}`, info.tps ? `${info.tps.toFixed(0)} tok/s` : ""].filter(Boolean).join(" · ")));
     this.add(" ", parts.join("\n"), true);
   }
+
+  todos = (items: Todo[]) => this.update((l) => (l.todos = items));
+
+  question = (question: string, options: string[]): Promise<string> =>
+    new Promise((resolve) => {
+      const was = this.live.activity;
+      this.endReply();
+      this.update((l) => {
+        l.activity = null;
+        l.asking = {
+          question,
+          options,
+          resolve: (answer) => {
+            this.add(this.p("?"), `${question}\n${this.p(answer)}`, true);
+            this.update((x) => ((x.asking = null), (x.activity = was ? { ...was, since: Date.now() } : null)));
+            resolve(answer);
+          },
+        };
+      });
+    });
 
   ask = (request: ApprovalRequest): Promise<ApprovalAnswer> =>
     new Promise((resolve) => {

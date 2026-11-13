@@ -21,8 +21,8 @@ export const MODE_HELP: Record<Mode, string> = {
 export const PLAN_REFUSAL =
   "Plan mode is on: nothing may be changed yet. Use read, search and read-only commands to investigate, then reply with your plan and stop. The user will switch modes to let you carry it out.";
 
-export type Kind = "edit" | "write" | "bash";
-export type Tool = "bash" | "edit" | "read";
+export type Kind = "edit" | "write" | "bash" | "fetch";
+export type Tool = "bash" | "edit" | "read" | "fetch";
 export type Rule = { tool: Tool; pattern?: string; source: Source; text: string };
 export type Verdict = { action: "allow" | "ask" | "deny"; rule?: Rule };
 
@@ -33,7 +33,8 @@ export function parseRule(text: string, source: Source): Rule | null {
   if (!m) return null;
   const name = m[1].toLowerCase();
   const tool = name === "write" ? "edit" : name;
-  if (tool !== "bash" && tool !== "edit" && tool !== "read") return null;
+  if (name === "webfetch") return { tool: "fetch", pattern: m[2]?.trim().replace(/^domain:/, "") || undefined, source, text: text.trim() };
+  if (tool !== "bash" && tool !== "edit" && tool !== "read" && tool !== "fetch") return null;
   return { tool, pattern: m[2]?.trim() || undefined, source, text: text.trim() };
 }
 
@@ -53,6 +54,9 @@ function pathMatches(pattern: string, path: string): boolean {
   const re = new RegExp(`^${p.split("**").map((part) => part.split("*").map(escape).join("[^/]*")).join(".*")}$`);
   return re.test(path) || (!p.includes("/") && re.test(path.split("/").pop()!)) || (p.endsWith("/**") && path === p.slice(0, -3));
 }
+
+// "example.com" is that host; "*.example.com" is any host under it.
+const hostMatches = (pattern: string, host: string) => (pattern.startsWith("*.") ? host.endsWith(pattern.slice(1)) : pattern.replace(/^domain:/, "") === host);
 
 // A command with none of these can't substitute or redirect, so it can be judged from its words.
 const OPAQUE = /[`<>\n\\]|\$\(|\$\{/;
@@ -166,6 +170,15 @@ export class Approvals {
 
   // `target` is the command for bash, and the path (first line of the summary) for an edit or new file.
   decide(kind: Kind, summary: string): Verdict {
+    if (kind === "fetch") {
+      const host = new URL(summary).hostname;
+      for (const action of ["deny", "ask", "allow"] as const) {
+        const rule = this.find(action, "fetch", (p) => hostMatches(p, host));
+        if (rule) return { action, rule };
+        if (action === "deny" && this.mode === "yolo") return { action: "allow" };
+      }
+      return { action: "ask" };
+    }
     if (kind !== "bash") {
       const rel = this.relative(summary.split("\n")[0].replace(/ \((new file|overwrite), \d+ lines\)$/, ""));
       const deny = this.find("deny", "edit", (p) => pathMatches(p, rel));
@@ -222,6 +235,10 @@ export class Approvals {
   }
   allowExact(command: string) {
     this.add("allow", `bash(${command.trim()})`, "saved");
+    this.save();
+  }
+  allowHost(url: string) {
+    this.add("allow", `fetch(${new URL(url).hostname})`, "saved");
     this.save();
   }
   allowPrefix(prefix: string) {

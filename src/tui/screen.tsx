@@ -36,6 +36,7 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["export", "[file]", "write the conversation to a markdown file"],
   ["copy", "", "copy the last reply to the clipboard"],
   ["status", "", "version, model, folder, session"],
+  ["tasks", "[stop <n>]", "commands running in the background"],
   ["mode", "[ask|auto|plan|dontask|yolo]", "show or set the mode"],
   ["permissions", "[allow|ask|deny|remove <rule>] [reset]", "rules for what runs without asking, asks, or is refused"],
   ["init", "", "have the model write AGENTS.md for this project"],
@@ -48,7 +49,7 @@ const KEYS = `Enter sends · \\ then Enter, Option+Enter or Ctrl+J starts a new 
 / commands · @ files · ! runs a shell command yourself · Up/Down history
 Shift+Tab changes mode · Esc stops the model · Esc Esc on an empty line opens rewind
 Ctrl+R searches history · Ctrl+G edits the message in $EDITOR · Ctrl+S sets the draft aside and brings it back
-Ctrl+O shows the last command's full output · Ctrl+L redraws · Ctrl+C twice or Ctrl+D quits`;
+Ctrl+O shows the last command's full output · Ctrl+T hides or shows the checklist · Ctrl+L redraws · Ctrl+C twice or Ctrl+D quits`;
 
 const MODE_LABEL: Record<Mode, string> = { ask: "⏸ ask", auto: "⏵⏵ auto", plan: "⏸ plan", dontask: "⏵⏵ dontask", yolo: "⏵⏵ yolo" };
 const MODE_SHORT: Record<Mode, string> = { ask: "asks before edits and commands", auto: "edits don't ask", plan: "read-only, proposes a plan", dontask: "refuses what isn't allowed", yolo: "nothing asks, commands sandboxed" };
@@ -62,6 +63,7 @@ type Overlay =
   | { type: "plan"; choices: Choice<"auto" | "ask" | "keep">[] };
 
 function approvalChoices(req: ApprovalRequest): Choice<ApprovalAnswer | "say">[] {
+  if (req.kind === "fetch") return [{ label: "Yes", value: "yes" }, { label: `Yes, and don't ask again in this project for pages on ${req.prefix}`, value: "prefix" }, { label: "No, and say what to do instead", value: "say" }];
   const always =
     req.kind !== "bash"
       ? { label: `Yes, and don't ask again for ${req.kind === "edit" ? "edits" : "new files"} this session`, value: "always" as const }
@@ -150,6 +152,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const [filter, setFilter] = useState(""); // typed into a picker that can be searched
   const setOverlay = (o: Overlay | null) => (setFilter(""), setOverlayRaw(o));
   const stash = useRef<string | null>(null);
+  const [showTodos, setShowTodos] = useState(true);
   const [choice, setChoice] = useState(0); // selected row of the approval or overlay list
   const [saying, setSaying] = useState<ed.Edit | null>(null); // typing what to do instead
   const [busy, setBusy] = useState(false);
@@ -178,7 +181,9 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   }, [Boolean(live.activity)]);
 
   // The most recent message is the likeliest place to go back to.
-  useEffect(() => setChoice(overlay?.type === "rewind" ? overlay.choices.length - 1 : 0), [pending, overlay?.type, filter]);
+  useEffect(() => setChoice(overlay?.type === "rewind" ? overlay.choices.length - 1 : 0), [pending, overlay?.type, filter, live.asking]);
+  // A question with nothing to choose from goes straight to typing.
+  useEffect(() => setSaying(live.asking && !live.asking.options.length ? ed.EMPTY : null), [live.asking]);
   const searchable = overlay?.type === "resume" || overlay?.type === "history";
   const shownChoices: Choice<unknown>[] | null = overlay
     ? searchable
@@ -295,6 +300,17 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       }
       case "status":
         return say(app.status(version).join("\n"));
+      case "tasks": {
+        const [verb, n] = arg.split(/\s+/);
+        const job = app.jobs.find((j) => j.id === Number(n));
+        if (verb === "stop") {
+          if (!job) return say("Which one? /tasks stop <number>", "warn");
+          app.stopJob(job);
+          return say(`Stopped job ${job.id}.`, "dim");
+        }
+        if (!app.jobs.length) return say("No background commands in this session.", "dim");
+        return say(app.jobs.map((j) => `${j.id}  ${app.jobRunning(j) ? p.green("running") : p.dim(j.exit === undefined || j.exit === null ? "ended" : `exit ${j.exit}`)}  ${j.command.split("\n")[0].slice(0, 60)}  ${p.dim(j.log)}`).join("\n"));
+      }
       case "rewind": {
         if (!app.checkpoints.length) return say("Nothing to go back to yet.", "dim");
         return setOverlay({ type: "rewind", choices: app.checkpoints.map((c, i) => ({ label: c.text.split("\n")[0].slice(0, width - 12), value: i })) });
@@ -434,6 +450,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
         // The tool waiting on the answer has to hear one, or the run never ends.
         app.interrupt();
         setSaying(null);
+        store.live.asking?.resolve("(the user stopped the run without answering)");
         return pending?.resolve("no");
       }
       if (!pending && !overlay && edit.value) return change(ed.EMPTY);
@@ -448,6 +465,28 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       return refresh();
     }
     if (key.ctrl && input === "o") return store.expandOutput();
+    if (key.ctrl && input === "t") return setShowTodos((v) => !v);
+
+    // The model asked a question: pick an option, or type an answer.
+    const asking = store.live.asking;
+    if (asking) {
+      if (saying) {
+        if (key.escape && asking.options.length) return setSaying(null);
+        if (key.return) return saying.value.trim() ? (asking.resolve(saying.value.trim()), setSaying(null)) : undefined;
+        if (key.backspace || key.delete) return setSaying(ed.backspace(saying));
+        if (key.leftArrow) return setSaying(ed.left(saying));
+        if (key.rightArrow) return setSaying(ed.right(saying));
+        if (input && !key.ctrl && !key.meta) return setSaying(ed.insert(saying, input));
+        return;
+      }
+      const count = asking.options.length + 1;
+      if (key.upArrow) return setChoice((c) => (c + count - 1) % count);
+      if (key.downArrow) return setChoice((c) => (c + 1) % count);
+      const n = Number(input);
+      const picked = key.return ? choice : input && n >= 1 && n <= count ? n - 1 : -1;
+      if (picked < 0) return;
+      return picked < asking.options.length ? asking.resolve(asking.options[picked]) : setSaying(ed.EMPTY);
+    }
     if (key.ctrl && input === "l") {
       stdout.write("\x1b[2J\x1b[3J\x1b[H");
       return setPrinted((n) => n + 1);
@@ -602,7 +641,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       {asking ? (
         <Box flexDirection="column" marginTop={1}>
           <Rule width={width} />
-          <Text bold>{asking.change ? changeTitle(asking.change) : "Run a command"}</Text>
+          <Text bold>{asking.change ? changeTitle(asking.change) : asking.kind === "fetch" ? "Fetch a web page" : "Run a command"}</Text>
           <Box flexDirection="column" paddingLeft={1} marginY={1}>
             <Text>{diff ? diff.lines.join("\n") : asking.summary.split(app.root + "/").join("").split(app.root).join(".")}</Text>
           </Box>
@@ -613,7 +652,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
             </Box>
           ) : (
             <>
-              <Text>{asking.change ? (asking.change.before === null ? "Create this file?" : "Make this edit?") : "Run this command?"}</Text>
+              <Text>{asking.change ? (asking.change.before === null ? "Create this file?" : "Make this edit?") : asking.kind === "fetch" ? "Fetch this page?" : "Run this command?"}</Text>
               <List choices={approvalChoices(asking)} index={choice} />
             </>
           )}
@@ -634,11 +673,38 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
         </Box>
       ) : null}
 
+      {live.asking ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Rule width={width} />
+          <Text bold>{live.asking.question}</Text>
+          {saying ? (
+            <Box>
+              <Text>Your answer: </Text>
+              <InputText edit={saying} active hint="" />
+            </Box>
+          ) : (
+            <List choices={[...live.asking.options.map((o) => ({ label: o, value: o })), { label: "Something else (type it)", value: "" }]} index={choice} />
+          )}
+          <Text dimColor>{saying ? "Enter to send" : "Enter to choose"}</Text>
+        </Box>
+      ) : null}
+
+      {showTodos && live.todos.length && !asking && !overlay ? (
+        <Box flexDirection="column" marginTop={1}>
+          {live.todos.slice(0, 10).map((t, i) => (
+            <Text key={i} dimColor={t.status === "done"} color={t.status === "doing" ? "cyan" : undefined} wrap="truncate-end">
+              {`  ${t.status === "done" ? "☑" : t.status === "doing" ? "◐" : "☐"} ${t.text}`}
+            </Text>
+          ))}
+          {live.todos.length > 10 ? <Text dimColor>{`  … ${live.todos.length - 10} more`}</Text> : null}
+        </Box>
+      ) : null}
+
       {live.queue.map((q, i) => (
         <Text key={i} dimColor>{`  queued: ${q.split("\n")[0].slice(0, width - 12)}`}</Text>
       ))}
 
-      {!asking && !overlay ? (
+      {!asking && !overlay && !live.asking ? (
         <Box flexDirection="column" marginTop={1}>
           <Rule width={width} />
           <Box width={width}>
@@ -661,7 +727,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
               ))}
             </Box>
           ) : (
-            <Footer width={width} mode={app.mode} hint={exitHint ? "press ctrl+c again to quit" : `${MODE_SHORT[app.mode]} · shift+tab changes`} right={`${app.name ? `${app.name} · ` : ""}${app.profile.model} · ${pct}% context`} />
+            <Footer width={width} mode={app.mode} hint={exitHint ? "press ctrl+c again to quit" : `${MODE_SHORT[app.mode]} · shift+tab changes`} right={`${app.jobs.filter((j) => app.jobRunning(j)).length ? `${app.jobs.filter((j) => app.jobRunning(j)).length} in background · ` : ""}${app.name ? `${app.name} · ` : ""}${app.profile.model} · ${pct}% context`} />
           )}
         </Box>
       ) : null}

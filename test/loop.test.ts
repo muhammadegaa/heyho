@@ -53,7 +53,7 @@ function setup() {
   requests.length = 0;
   const root = realpathSync(mkdtempSync(join(tmpdir(), "heyho-loop-")));
   writeFileSync(join(root, "a.txt"), "hello\n");
-  const ctx: ToolContext = { root, stateDir: mkdtempSync(join(tmpdir(), "heyho-st-")), seen: new Map(), approve: async () => true, sandbox: { enabled: false, noNet: false }, outCount: { n: 0 } };
+  const ctx: ToolContext = { root, stateDir: mkdtempSync(join(tmpdir(), "heyho-st-")), seen: new Map(), approve: async () => true, sandbox: { enabled: false, noNet: false }, outCount: { n: 0 }, jobs: [] };
   const messages: Message[] = [{ role: "system", content: "sys" }, { role: "user", content: "task" }];
   const stats = newStats();
   const events: AgentEvent[] = [];

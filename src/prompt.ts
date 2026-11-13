@@ -92,6 +92,6 @@ export function folderInstructions(root: string, abs: string, given: Set<string>
 export function systemPrompt(root: string, now = new Date(), notesFile?: string, custom: { replace?: string; append?: string } = {}): string {
   const branch = spawnSync("git", ["branch", "--show-current"], { cwd: root, encoding: "utf8" }).stdout?.trim();
   const env = `Working directory: ${root}\nOS: ${process.platform} ${release()}\nDate: ${now.toISOString().slice(0, 10)}${branch ? `\nGit branch: ${branch}` : ""}`;
-  const notes = notesFile ? `\nNotes file: ${notesFile} (kept between sessions; when you learn something about this project that will matter next time, add a line to it with edit or write)` : "";
+  const notes = notesFile ? `\nNotes file: ${notesFile} (kept between sessions; write there what will matter next time)` : "";
   return `${custom.replace ?? BASE}\n\n${env}${notes}${instructions(root, notesFile).text}${custom.append ? `\n\n${custom.append}` : ""}`;
 }

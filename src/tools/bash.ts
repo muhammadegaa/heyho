@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { declined, fail, ok, type Tool, type ToolContext } from "./types.ts";
+import { declined, fail, ok, type Job, type Tool, type ToolContext } from "./types.ts";
 
 const HEAD = 4000;
 const TAIL = 4000;
@@ -49,6 +49,7 @@ export const bash: Tool = {
     properties: {
       command: { type: "string", description: "The command to run" },
       timeout: { type: "integer", description: "Seconds before the command is killed (default 120, max 600)" },
+      background: { type: "boolean", description: "For servers: return at once, output goes to a log file" },
     },
     required: ["command"],
   },
@@ -60,6 +61,22 @@ export const bash: Tool = {
     const [cmd, argv] = ctx.sandbox.enabled
       ? ["/usr/bin/sandbox-exec", ["-p", seatbeltProfile(ctx.root, ctx.sandbox.noNet), "/bin/bash", "-c", command]]
       : ["/bin/bash", ["-c", command]];
+
+    if (args.background === true) {
+      const dir = join(ctx.stateDir, "jobs");
+      mkdirSync(dir, { recursive: true });
+      const id = ctx.jobs.length + 1;
+      const log = join(dir, `${Date.now()}-${id}.log`);
+      const fd = openSync(log, "w");
+      const child = spawn(cmd, argv as string[], { cwd: ctx.root, env: { ...process.env, PAGER: "cat", GIT_PAGER: "cat", CI: "1", TERM: "dumb", NO_COLOR: "1" }, detached: true, stdio: ["ignore", fd, fd] });
+      closeSync(fd);
+      const job: Job = { id, pid: child.pid!, command, log, started: Date.now() };
+      ctx.jobs.push(job);
+      child.on("exit", (code) => (job.exit = code));
+      child.on("error", () => (job.exit = null));
+      child.unref();
+      return ok(`Started in the background as job ${id} (process group ${child.pid}).\nIts output goes to ${log}; read that file to see how it is doing.\nStop it with: kill -- -${child.pid}`);
+    }
 
     return new Promise((resolveResult) => {
       const child = spawn(cmd, argv as string[], {

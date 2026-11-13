@@ -15,7 +15,7 @@ import { loadProfile } from "./profiles.ts";
 import { folderInstructions, instructions, systemPrompt } from "./prompt.ts";
 import { listSessions, loadSession, newSession, type Checkpoint, type Loaded, type Session, type SessionInfo } from "./session.ts";
 import { TOOLS, toolSchemas } from "./tools/index.ts";
-import type { Change, Tool, ToolContext } from "./tools/types.ts";
+import type { Change, Job, Todo, Tool, ToolContext } from "./tools/types.ts";
 import type { RunInfo } from "./ui.ts";
 
 export type Outcome = RunResult | { status: "error"; reason: string };
@@ -27,6 +27,8 @@ export type ApprovalAnswer = "yes" | "always" | "prefix" | "no" | { say: string 
 export type Front = {
   onEvent: (e: AgentEvent) => void;
   ask: (req: ApprovalRequest) => Promise<ApprovalAnswer>; // only called when a person can answer
+  question?: (question: string, options: string[]) => Promise<string>; // the model asks the user something
+  todos?: (items: Todo[]) => void;
   note: (text: string, tone?: "dim" | "warn" | "error") => void;
   changed?: (change: Change) => void;
   output?: (chunk: string) => void;
@@ -121,6 +123,9 @@ export class App {
       seen: new Map(),
       sandbox: { enabled: opts.mode === "yolo", noNet: opts.noNet },
       outCount: { n: 0 },
+      jobs: [],
+      onTodos: (items) => front.todos?.(items),
+      question: opts.canAsk && front.question ? front.question : undefined,
       onChange: (abs, before, after) => {
         // The notes file is the agent's own; it is not part of the project's changes to undo.
         if (abs !== this.ctx.notesFile) {
@@ -211,15 +216,16 @@ export class App {
     const verdict = this.approvals.decide(kind, summary);
     if (verdict.action === "allow") return true;
     if (verdict.action === "deny") return `Blocked: a rule set by the user forbids this (${verdict.rule!.text}). Do not try another way to do the same thing; say that it is not allowed.`;
-    if (this.mode === "plan") return PLAN_REFUSAL;
+    if (this.mode === "plan" && kind !== "fetch") return PLAN_REFUSAL; // reading a page changes nothing
     if (this.mode === "dontask") return "Blocked: this session runs without asking, and this action is not on the allowed list. Carry on without it, or say what you could not do.";
     if (!this.opts.canAsk) return false;
     const suggested = kind === "bash" ? this.approvals.suggest(summary) : null;
-    const prefix = suggested?.length ? suggested.map((p) => `${p} …`).join(", ") : null;
+    const prefix = kind === "fetch" ? new URL(summary).hostname : suggested?.length ? suggested.map((p) => `${p} …`).join(", ") : null;
     const answer = await this.front.ask({ kind, summary, change, prefix });
     if (typeof answer === "object") return answer.say;
-    if (answer === "always") kind === "bash" ? this.approvals.allowExact(summary) : this.approvals.allowKind(kind);
-    if (answer === "prefix" && prefix) this.approvals.allowSuggested(summary);
+    if (kind === "fetch" && (answer === "always" || answer === "prefix")) this.approvals.allowHost(summary);
+    else if (answer === "always") kind === "bash" ? this.approvals.allowExact(summary) : this.approvals.allowKind(kind);
+    else if (answer === "prefix" && prefix) this.approvals.allowSuggested(summary);
     return answer !== "no";
   }
 
@@ -287,6 +293,28 @@ export class App {
   }
   interrupt() {
     this.running?.abort();
+  }
+  get jobs(): Job[] {
+    return this.ctx.jobs;
+  }
+  // Whether a background command is still going (it may have ended without telling us if it was killed from outside).
+  jobRunning(job: Job): boolean {
+    if (job.exit !== undefined) return false;
+    try {
+      process.kill(job.pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  stopJob(job: Job) {
+    try {
+      process.kill(-job.pid, "SIGKILL");
+    } catch {}
+  }
+  // Background commands do not outlive the session.
+  shutdown() {
+    for (const job of this.ctx.jobs) if (this.jobRunning(job)) this.stopJob(job);
   }
   lastReply(): string | null {
     const m = this.messages.findLast((x) => x.role === "assistant");
