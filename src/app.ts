@@ -118,7 +118,12 @@ export class App {
   }
   private firstMessage(): Message {
     this.folderNotes.clear();
-    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile, { replace: this.opts.systemPrompt, append: [skillsPrompt(this.skills), agentsPrompt(this.agents), mcpPrompt(this.servers).trimEnd(), this.opts.appendSystemPrompt].filter(Boolean).join("\n\n") || undefined }) };
+    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile, { replace: this.opts.systemPrompt, append: [skillsPrompt(this.skills), agentsPrompt(this.agents), mcpPrompt(this.servers).trimEnd(), this.limitedTools(), this.opts.appendSystemPrompt].filter(Boolean).join("\n\n") || undefined }) };
+  }
+  // With --tools the instructions still describe editing and running commands. Without this
+  // line a model asked to fix a file with only read and search read it ten times and stopped.
+  private limitedTools(): string {
+    return this.opts.tools ? `Only these tools are offered in this run: ${this.tools.map((t) => t.name).join(", ")}. If the task needs one you do not have, say what you could not do and stop.` : "";
   }
   // The instruction files in effect, for /memory.
   instructionFiles() {

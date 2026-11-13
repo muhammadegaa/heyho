@@ -65,6 +65,7 @@ test("--disallowed-tools refuses even with --yolo", () => {
 
 test("--tools limits which tools the model is offered", () => {
   const r = run(["--tools", "read,search", "look around"], { steps: [reply("Looked.\n")] });
+  expect(r.requests()[0].messages[0].content).toMatch(/Only these tools are offered in this run: read, search\. If the task needs one you do not have, say what you could not do and stop\./);
   expect(r.requests()[0].tools.map((t) => t.function.name)).toEqual(["read", "search"]);
 });
 
