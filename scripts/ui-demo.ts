@@ -25,11 +25,18 @@ const script: Step[] = [
 if (process.env.DEMO_STEPS) script.splice(0, script.length, ...JSON.parse(readFileSync(process.env.DEMO_STEPS, "utf8")));
 const speed = process.env.DEMO_FAST ? 0.05 : 1;
 
+const seen: unknown[] = [];
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms * speed));
 const server = createServer((req, res) => {
   if (req.method !== "POST") return res.writeHead(404).end();
-  req.resume();
+  let body = "";
+  req.on("data", (c) => (body += c));
   req.on("end", async () => {
+    // The tests read back what heyho sent.
+    if (process.env.DEMO_ROOT) {
+      seen.push(JSON.parse(body));
+      writeFileSync(`${process.env.DEMO_ROOT}-requests.json`, JSON.stringify(seen));
+    }
     const s = script.shift() ?? { text: "Nothing more is scripted.\n" };
     res.writeHead(200, { "Content-Type": "text/event-stream", Connection: "close" });
     const send = (delta: object, finish?: string) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);

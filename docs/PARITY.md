@@ -13,7 +13,7 @@ Not covered: Claude Code's IDE, desktop, web and cloud features, and anything th
 
 ## Ledger: what has been closed since, and the test that shows it
 
-The tables from section 1 on describe the first run, on 2026-11-12, before any of this. Every row here is covered by an automated test: `e2e/screen.test.ts` drives the real screen in a tmux pane against a scripted server and reads the rendered rows (66 cases); `test/` holds the unit tests (71). A row is listed only when its test passes. The scripted server stands in for the model, so these show what heyho does with a given reply, not what a model chooses to reply.
+The tables from section 1 on describe the first run, on 2026-11-12, before any of this. Every row here is covered by an automated test: `e2e/screen.test.ts` drives the real screen in a tmux pane against a scripted server and reads the rendered rows (68 cases); `e2e/headless.test.ts` runs headless commands against the same server (9); `test/` holds the unit tests (71). A row is listed only when its test passes. The scripted server stands in for the model, so these show what heyho does with a given reply, not what a model chooses to reply.
 
 | Area | Claude Code behaviour matched | Test (name starts with) |
 |---|---|---|
@@ -43,6 +43,12 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 | Commands | `/help`, `/context`, `/status`, `/export`, `/copy`, `/diff`, `/undo`, `/rename`, `/memory` | /help lists…; /status shows…; /export writes…; /copy puts…; /undo takes back…; /memory lists… |
 | Instruction files | Yours, folders above, the project's, a private one; `@file` imports; subfolder files on first read | instruction files load most general first… (unit); a line that is only @file… (unit); a subfolder's AGENTS.md is given… |
 | Notes the agent keeps | Written without asking, loaded next session | the agent can write its notes file… |
+| Headless input | `-p`, task from stdin, stdin added to a task | -p reads the task from stdin… (headless) |
+| Headless output | Reply only, one JSON result, or a JSON event per line | --output-format json…; --output-format stream-json… (headless) |
+| Headless rules and tools | Allow and deny rules from flags; limit the tools offered | --allowed-tools…; --disallowed-tools refuses even with --yolo; --tools limits… (headless) |
+| System prompt flags | Replace or add to the instructions | --system-prompt replaces… (headless) |
+| Headless sessions | `--continue`, `--resume <name>`, a session name, a turn limit | --continue and --resume <name>…; --max-turns… (headless) |
+| Custom commands | Markdown files as slash commands, with arguments; `.claude/commands` read too | a markdown file in .heyho/commands…; commands in .claude/commands… |
 | Leaving | Ctrl+C clears, twice quits | Ctrl+C clears typed text… |
 | No server | A message with the command to start one | no server: a plain message… |
 
@@ -58,15 +64,15 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 
 Not started, in the order planned:
 
-1. Headless: read the task from stdin, a stream of JSON events, `--resume` in headless, tool allow and deny flags, system prompt flags.
-2. Custom slash commands from markdown files.
-3. Tools, each to be kept only if an eval run shows no loss: background commands, a task list, a question tool, web fetch.
-4. Hooks on lifecycle events.
-5. MCP servers.
-6. Skills and subagents.
-7. In the screen: syntax highlighting, vim keys, a configurable status line, themes, image paste.
+1. Tools, each to be kept only if an eval run shows no loss: background commands, a task list, a question tool, web fetch.
+2. Hooks on lifecycle events.
+3. MCP servers.
+4. Skills and subagents.
+5. In the screen: syntax highlighting, vim keys, a configurable status line, themes, image paste.
 
 Different by design, not planned: a second model that reviews each action (Claude Code's `auto` mode). heyho's no-prompt mode contains commands with the macOS sandbox instead. Out of scope: IDE, desktop, web and cloud features.
+
+Regression check on the real model after these changes (Qwen3.6, 2026-11-13, two runs each): task 01 2/2, task 08 2/2, task 07 1/2, against 1/3 on 07 before. One 07 run stopped at the 40-step limit, which no earlier 07 run did.
 
 Limits of this evidence: the tests run in tmux only, so other terminal programs are not covered; and nothing here measures how well a local model uses these features.
 

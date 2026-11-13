@@ -739,3 +739,32 @@ test("/memory edit opens the chosen file in the editor", async () => {
   await s.wait(/Saved .*AGENTS\.md/);
   expect(readFileSync(join(s.root, "AGENTS.md"), "utf8")).toBe("Prefer small functions.");
 });
+
+// ---- custom commands ----
+
+const COMMAND_FILES = {
+  ...FILES,
+  ".heyho/commands/review.md": "---\ndescription: review a file for bugs\n---\nReview $ARGUMENTS for bugs and list them.\n",
+  ".claude/commands/ship.md": "Run the tests, then summarise what changed.\n",
+};
+
+test("a markdown file in .heyho/commands is a slash command: listed in the menu and sent with its arguments", async () => {
+  s = await open({ files: COMMAND_FILES, steps: [reply("No bugs.\n")] });
+  await s.type("/rev");
+  await s.wait(/❯ \/review\s+review a file for bugs/);
+  await s.key("Tab");
+  await s.send("src/cart.js");
+  await s.wait(/worked for/);
+  const dir = join(s.home, "projects", readdirSync(join(s.home, "projects"))[0], "sessions");
+  expect(readFileSync(join(dir, readdirSync(dir)[0]), "utf8")).toContain("Review src/cart.js for bugs and list them.");
+  expect(s.screen()).toMatch(/› \/review src\/cart\.js/);
+});
+
+test("commands in .claude/commands work too, and /help lists custom commands", async () => {
+  s = await open({ files: COMMAND_FILES, steps: [reply("Shipped.\n")] });
+  await s.send("/help");
+  const help = await s.wait(/\/ship/);
+  expect(help).toMatch(/\/review \[arguments\]\s+review a file for bugs/);
+  await s.send("/ship");
+  await s.wait(/Shipped\./);
+});

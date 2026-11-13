@@ -15,7 +15,7 @@ import { loadProfile } from "./profiles.ts";
 import { folderInstructions, instructions, systemPrompt } from "./prompt.ts";
 import { listSessions, loadSession, newSession, type Checkpoint, type Loaded, type Session, type SessionInfo } from "./session.ts";
 import { TOOLS, toolSchemas } from "./tools/index.ts";
-import type { Change, ToolContext } from "./tools/types.ts";
+import type { Change, Tool, ToolContext } from "./tools/types.ts";
 import type { RunInfo } from "./ui.ts";
 
 export type Outcome = RunResult | { status: "error"; reason: string };
@@ -42,7 +42,14 @@ export type AppOptions = {
   cwd: string;
   headless: boolean;
   canAsk: boolean; // false when nobody is at a terminal to answer
-  resume: boolean;
+  resume: boolean; // carry on from the last session here
+  resumeName?: string; // or from the one whose name or first message contains this
+  sessionName?: string;
+  tools?: string[]; // offer the model only these
+  allow?: string[]; // extra rules for this run
+  deny?: string[];
+  systemPrompt?: string;
+  appendSystemPrompt?: string;
 };
 
 export const SERVER_HELP = (url: string) =>
@@ -68,6 +75,7 @@ export class App {
   session!: Session;
   resumed?: SessionInfo;
   running: AbortController | null = null;
+  tools: Tool[] = TOOLS;
   problems: string[] = []; // settings that could not be used, to show at start
   private folderNotes = new Set<string>(); // subfolder instruction files already given to the model
   get notesFile() {
@@ -75,7 +83,7 @@ export class App {
   }
   private firstMessage(): Message {
     this.folderNotes.clear();
-    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile) };
+    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile, { replace: this.opts.systemPrompt, append: this.opts.appendSystemPrompt }) };
   }
   // The instruction files in effect, for /memory.
   instructionFiles() {
@@ -99,6 +107,13 @@ export class App {
     const settings = loadSettings(this.root);
     this.approvals = new Approvals(opts.mode, join(this.stateDir, "allowed.json"), this.root, settings.layers);
     this.problems = [...settings.problems, ...this.approvals.problems];
+    for (const [action, list] of [["allow", opts.allow], ["deny", opts.deny]] as const)
+      for (const rule of list ?? []) if (!this.approvals.addRule(action, rule)) throw new Error(`"${rule}" is not a rule. Examples: bash(npm test *), edit(src/**), read(.env)`);
+    if (opts.tools) {
+      const unknown = opts.tools.filter((n) => !TOOLS.some((t) => t.name === n));
+      if (unknown.length) throw new Error(`Unknown tool${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}. Tools: ${TOOLS.map((t) => t.name).join(", ")}.`);
+      this.tools = TOOLS.filter((t) => opts.tools!.includes(t.name));
+    }
     this.changes = new Changes(this.root);
     this.ctx = {
       root: this.root,
@@ -128,10 +143,15 @@ export class App {
   // Finds the server and its context size, then opens a new session or the last one.
   async start() {
     await this.connect();
-    this.resumed = this.opts.resume ? listSessions(this.stateDir, 1)[0] : undefined;
+    // A headless run carries on from headless runs too; an interactive one skips those one-offs.
+    const earlier = listSessions(this.stateDir, 50, { headless: this.opts.headless });
+    const wanted = this.opts.resumeName?.toLowerCase();
+    this.resumed = wanted ? earlier.find((s) => s.first.toLowerCase().includes(wanted)) : this.opts.resume ? earlier[0] : undefined;
+    if (wanted && !this.resumed) throw new Error(`No session in this directory matches "${this.opts.resumeName}".`);
     if (this.opts.resume && !this.resumed) throw new Error("There is no earlier session in this directory to continue.");
     if (this.resumed) this.restore(loadSession(this.resumed.file));
     else this.open([this.firstMessage()], true);
+    if (this.opts.sessionName) this.rename(this.opts.sessionName);
   }
 
   // Opens a new session file that carries on an earlier one: its conversation, the points
@@ -221,7 +241,7 @@ export class App {
 
   private async shorten(signal?: AbortSignal) {
     this.front.onEvent({ type: "request", step: 0 });
-    const next = await compact(this.profile, this.messages, toolSchemas(TOOLS), { signal, onReasoning: (text) => this.front.onEvent({ type: "thinking", text }) });
+    const next = await compact(this.profile, this.messages, toolSchemas(this.tools), { signal, onReasoning: (text) => this.front.onEvent({ type: "thinking", text }) });
     this.open(next, false);
     // Earlier prompts are gone from the conversation, so it can't be rewound to them any more.
     for (const c of this.checkpoints) c.messages = Math.min(c.messages, this.messages.length);
@@ -242,7 +262,7 @@ export class App {
     const abort = (this.running = new AbortController());
     this.ctx.signal = abort.signal;
     const agent = () =>
-      runAgent({ profile: this.profile, messages: this.messages, tools: TOOLS, ctx: this.ctx, maxSteps: this.opts.maxSteps, contextSize: this.contextSize, stats: this.stats, onEvent: this.front.onEvent, record: (e) => this.session.record(e), signal: abort.signal });
+      runAgent({ profile: this.profile, messages: this.messages, tools: this.tools, ctx: this.ctx, maxSteps: this.opts.maxSteps, contextSize: this.contextSize, stats: this.stats, onEvent: this.front.onEvent, record: (e) => this.session.record(e), signal: abort.signal });
     let result: Outcome;
     try {
       result = await agent();

@@ -3,6 +3,8 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { App, INIT_TASK, type AppOptions, type ApprovalAnswer, type ApprovalRequest } from "./app.ts";
+import { expand, loadCommands } from "./commands.ts";
+import type { AgentEvent } from "./loop.ts";
 import { MODE_HELP, MODES, type Mode } from "./approve.ts";
 import { createInput, type Input } from "./input.ts";
 import { heyhoHome } from "./settings.ts";
@@ -12,7 +14,7 @@ const COMMAND_NAMES = ["help", "context", "compact", "clear", "resume", "undo", 
 const HELP = `  /context  /compact  /clear  /resume [n]  /undo  /mode [name]  /allowed [reset]  /init  /model [profile]  /exit
   End a line with \\ to continue it. !command runs it yourself. Ctrl-C stops a running task.`;
 
-function build(opts: AppOptions, ui: Renderer, input: () => Input) {
+function build(opts: AppOptions, ui: Renderer, input: () => Input, tap?: (e: AgentEvent) => void) {
   const { dim, bold } = ui.colors;
   const ask = async (req: ApprovalRequest): Promise<ApprovalAnswer> => {
     const resume = ui.pause();
@@ -33,14 +35,31 @@ function build(opts: AppOptions, ui: Renderer, input: () => Input) {
       return k === "n" || k === "no" ? "no" : { say: a };
     }
   };
-  return new App(opts, { onEvent: ui.onEvent, ask, note: (text, tone) => ui.note(tone === "error" ? ui.colors.red(text) : tone === "warn" ? ui.colors.yellow(text) : tone === "dim" ? dim(text) : text), changed: (c) => ui.changed(c), output: (c) => ui.output(c) });
+  const onEvent = tap ? (e: AgentEvent) => (tap(e), ui.onEvent(e)) : ui.onEvent;
+  return new App(opts, { onEvent, ask, note: (text, tone) => ui.note(tone === "error" ? ui.colors.red(text) : tone === "warn" ? ui.colors.yellow(text) : tone === "dim" ? dim(text) : text), changed: (c) => ui.changed(c), output: (c) => ui.output(c) });
 }
 
-export async function runHeadless(opts: AppOptions, task: string, out: { json: boolean; report?: string }) {
-  const ui = new Renderer({ stdoutTTY: Boolean(process.stdout.isTTY) && !out.json, stderrTTY: Boolean(process.stderr.isTTY), text: out.json ? process.stderr : process.stdout });
+export type Format = "text" | "json" | "stream-json";
+
+// stream-json prints one JSON object per line on stdout as things happen: start, then text
+// (each reply, whole), tool_call and tool_result, and a final result.
+export async function runHeadless(opts: AppOptions, task: string, out: { format: Format; report?: string }) {
+  const structured = out.format !== "text";
+  const ui = new Renderer({ stdoutTTY: Boolean(process.stdout.isTTY) && !structured, stderrTTY: Boolean(process.stderr.isTTY), text: structured ? process.stderr : process.stdout });
+  const emit = (event: object) => out.format === "stream-json" && console.log(JSON.stringify(event));
+  let text = "";
+  const tap = (e: AgentEvent) => {
+    if (e.type === "text") text += e.text;
+    else if (e.type === "turn" || e.type === "tool_start") {
+      if (text) emit({ type: "text", text });
+      text = "";
+      if (e.type === "tool_start") emit({ type: "tool_call", name: e.name, args: e.args });
+    } else if (e.type === "tool") emit({ type: "tool_result", name: e.name, ok: e.result.ok, text: e.result.text.slice(0, 4000) });
+  };
   let input: Input | undefined;
-  const app = build(opts, ui, () => (input ??= createInput({ historyFile: join(heyhoHome(), "history"), root: opts.cwd, commands: [] })));
+  const app = build(opts, ui, () => (input ??= createInput({ historyFile: join(heyhoHome(), "history"), root: opts.cwd, commands: [] })), tap);
   await app.start();
+  emit({ type: "start", model: app.profile.model, cwd: app.root, mode: app.mode, session: app.session.file });
   console.error(ui.colors.dim(`${app.banner()} · ${app.root}`));
   const onSigint = () => app.interrupt();
   process.on("SIGINT", onSigint);
@@ -48,8 +67,9 @@ export async function runHeadless(opts: AppOptions, task: string, out: { json: b
   process.off("SIGINT", onSigint);
   ui.finish(result, info);
   if (out.report) writeFileSync(out.report, JSON.stringify({ ...result, stats: app.stats, wallMs: info.wallMs, model: app.profile.model, contextSize: app.contextSize, session: app.session.file }, null, 2));
-  if (out.json)
-    console.log(JSON.stringify({ status: result.status, reason: "reason" in result ? result.reason : undefined, reply: app.lastReply(), steps: app.stats.steps, wallMs: info.wallMs, changes: info.changes, session: app.session.file }, null, 2));
+  const summary = { status: result.status, reason: "reason" in result ? result.reason : undefined, reply: app.lastReply(), steps: app.stats.steps, wallMs: info.wallMs, changes: info.changes, session: app.session.file };
+  if (out.format === "json") console.log(JSON.stringify(summary, null, 2));
+  emit({ type: "result", ...summary });
   input?.close();
   process.exit(result.status === "done" ? 0 : result.status === "error" ? 1 : 2);
 }
@@ -124,7 +144,9 @@ export async function runLineMode(opts: AppOptions) {
       const [name, ...rest] = line.slice(1).split(/\s+/);
       if (name === "exit" || name === "quit") break;
       const command = commands[name];
+      const custom = loadCommands(app.root).find((c) => c.name === name);
       if (command) await command(rest.join(" "));
+      else if (custom) await run(expand(custom, rest.join(" ")));
       else console.error(`Unknown command /${name}. /help lists them.`);
       continue;
     }

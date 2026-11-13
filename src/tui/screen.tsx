@@ -8,6 +8,7 @@ import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { INIT_TASK, type App, type ApprovalAnswer, type ApprovalRequest } from "../app.ts";
 import { MODE_HELP, MODES, type Mode } from "../approve.ts";
+import { expand, loadCommands } from "../commands.ts";
 import { listFiles } from "../input.ts";
 import { heyhoHome } from "../settings.ts";
 import type { SessionInfo } from "../session.ts";
@@ -163,6 +164,8 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const historyAt = useRef(-1); // -1: not browsing
   const draft = useRef("");
   const files = useRef<string[] | null>(null);
+  const custom = useMemo(() => loadCommands(app.root), []);
+  const allCommands: [string, string, string][] = [...COMMANDS, ...custom.filter((c) => !COMMANDS.some((b) => b[0] === c.name)).map((c): [string, string, string] => [c.name, "[arguments]", c.description])];
 
   const { live } = store;
   const pending = live.pending;
@@ -200,8 +203,8 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const menu = useMemo(() => {
     if (menuOff) return null;
     if (slashQuery !== null) {
-      const names = ed.rank(COMMANDS.map((c) => c[0]), slashQuery, MENU_ROWS);
-      return { kind: "slash" as const, rows: names.map((n) => ({ text: "/" + n, hint: COMMANDS.find((c) => c[0] === n)![2] })) };
+      const names = ed.rank(allCommands.map((c) => c[0]), slashQuery, MENU_ROWS);
+      return { kind: "slash" as const, rows: names.map((n) => ({ text: "/" + n, hint: allCommands.find((c) => c[0] === n)![2] })) };
     }
     if (token) {
       files.current ??= listFiles(app.root);
@@ -216,7 +219,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   };
   const acceptMenu = (): ed.Edit => {
     const row = menu!.rows[Math.min(menuIndex, menu!.rows.length - 1)];
-    if (menu!.kind === "slash") return ed.at(row.text + (COMMANDS.find((c) => "/" + c[0] === row.text)![1] ? " " : ""));
+    if (menu!.kind === "slash") return ed.at(row.text + (allCommands.find((c) => "/" + c[0] === row.text)![1] ? " " : ""));
     return ed.replaceToken(edit, token!.start, "@" + row.text + " ");
   };
 
@@ -253,7 +256,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       case "quit":
         return exit();
       case "help":
-        return say(`${COMMANDS.map(([n, a, h]) => `/${`${n} ${a}`.padEnd(28)} ${p.dim(h)}`).join("\n")}\n\n${p.dim(KEYS)}`);
+        return say(`${allCommands.map(([n, a, h]) => `/${`${n} ${a}`.padEnd(28)} ${p.dim(h)}`).join("\n")}\n\n${p.dim(KEYS)}`);
       case "context": {
         const used = app.contextUsed;
         const pct = Math.round((100 * used) / app.contextSize);
@@ -355,6 +358,8 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const process_ = async (text: string) => {
     if (text.startsWith("/") && !text.includes("\n")) {
       const [name, ...rest] = text.slice(1).split(/\s+/);
+      const own = COMMANDS.some((c) => c[0] === name) ? undefined : custom.find((c) => c.name === name);
+      if (own) return runTask(expand(own, rest.join(" ")), text);
       store.note(p.dim(text));
       return command(name, rest.join(" "));
     }
