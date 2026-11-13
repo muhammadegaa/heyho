@@ -3,9 +3,11 @@ import { declined, fail, ok, type Tool } from "./types.ts";
 const MAX_CHARS = 8000;
 const TIMEOUT_MS = 20_000;
 
-// Readable text from an HTML page: scripts, styles and tags removed, entities decoded.
+// Readable text from an HTML page: its title, then the body with scripts, styles and tags
+// removed and entities decoded.
 export function htmlToText(html: string): string {
-  return html
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "";
+  return ((title.trim() ? `<p>${title}</p>\n` : "") + html.replace(/<title[^>]*>[\s\S]*?<\/title>/i, ""))
     .replace(/<(script|style|noscript|svg|head)\b[\s\S]*?<\/\1>/gi, " ")
     .replace(/<\/(p|div|li|tr|h[1-6]|section|article|pre|br)\s*>|<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, " ")

@@ -79,7 +79,9 @@ test("a question gets the user's answer, or tells the model to decide when nobod
 });
 
 test("a web page is reduced to its text", () => {
-  expect(htmlToText("<html><head><title>x</title><style>p{color:red}</style></head><body><h1>Docs</h1><p>Use <code>a &amp; b</code>.</p><script>bad()</script><ul><li>one</li><li>two</li></ul></body></html>")).toBe("Docs\nUse a & b .\none\ntwo");
+  expect(htmlToText("<html><head><title>x</title><style>p{color:red}</style></head><body><h1>Docs</h1><p>Use <code>a &amp; b</code>.</p><script>bad()</script><ul><li>one</li><li>two</li></ul></body></html>")).toBe("x\n\nDocs\nUse a & b .\none\ntwo");
+  // Some pages name themselves only in the title.
+  expect(htmlToText("<head><title> Example &amp; Co </title></head><body><p>Hi.</p></body>")).toBe("Example & Co\n\nHi.");
 });
 
 test("fetching asks by default; rules name hosts; a deny holds even in yolo", () => {

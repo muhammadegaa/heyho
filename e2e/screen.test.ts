@@ -840,7 +840,7 @@ test("fetching a page asks first, returns its text, and can be allowed for the h
   const requests = JSON.parse(readFileSync(`${s.root}-requests.json`, "utf8")) as { messages: { role: string; content: string }[] }[];
   const pages = requests.at(-1)!.messages.filter((m) => m.role === "tool").map((m) => m.content);
   expect(pages.length).toBe(2);
-  expect(pages[0]).toMatch(/^200 OK · http:\/\/127\.0\.0\.1:\d+\/docs\nDocs\nThe answer is 42 & nothing else\.$/);
+  expect(pages[0]).toMatch(/^200 OK · http:\/\/127\.0\.0\.1:\d+\/docs\nt\n\nDocs\nThe answer is 42 & nothing else\.$/);
 });
 
 test("a background command shows in the footer and /tasks, can be stopped, and does not outlive heyho", async () => {
@@ -859,6 +859,16 @@ test("a background command shows in the footer and /tasks, can be stopped, and d
   await s.wait(/heyho has exited/);
   await new Promise((r) => setTimeout(r, 300));
   expect(() => process.kill(pid, 0)).toThrow();
+});
+
+test("/tasks names the program, not the cd to the project folder the model put in front of it", async () => {
+  s = await open({ steps: [call("bash", { command: "cd $ROOT && sleep 300", background: true }), reply("Up.\n")] });
+  await s.send("start it");
+  await s.wait(/Run this command\?/);
+  await s.key("1");
+  await s.wait(/Up\./);
+  await s.send("/tasks");
+  await s.wait(/1\s+running\s+sleep 300/);
 });
 
 test("/tasks stop ends a background command", async () => {
@@ -907,7 +917,7 @@ test("a hook that blocks a call is shown in the transcript", async () => {
   s = await open({ args: ["--trust-project"], files: settings({ hooks: { PreToolUse: [{ matcher: "edit", command: "echo frozen >&2; exit 2" }] } }), steps: [EDIT, reply("Okay.\n")] });
   await s.send("change it");
   const screen = await s.wait(/worked for/);
-  expect(screen).toMatch(/Blocked by a hook: frozen/);
+  expect(screen).toMatch(/Not run: a hook the user set up blocked it: frozen/);
   expect(screen).not.toMatch(/Make this edit\?/);
 });
 

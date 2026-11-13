@@ -37,11 +37,11 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 18 | Failed edit recovery | big | `in src/ui.ts rename the function secs to seconds everywhere` | Any failed edit is retried with a corrected match; tests pass after | defect, then pass. The rename was right in three files (type check clean). A read-only `grep -rn '\\bsecs\\b' src/` asked for approval; fixed in df8e104 and rerun: no prompt |
 | 19 | Write a new file | big | `add test/secs.test.ts with two tests for seconds formatting and run it` | New file panel; test runs and passes | defect, then pass. File written and its two tests pass (run outside heyho). `ls test/ 2>/dev/null \|\| echo …` asked for approval; the `2>/dev/null` part is fixed in 41c27b6 |
 | 20 | Checklist | big | `add a --quiet flag to the headless mode that prints only the reply; keep a checklist` | Checklist shown and ticked as steps finish | defect, then pass. First run stopped at 40 steps with the work nearly done, printed a raw tool call as its summary, and never ticked the checklist. Fixed in 41c27b6. Rerun: 54 steps, checklist ticked item by item, `--quiet` works (checked outside heyho: reply on stdout, 0 bytes on stderr) |
-| 21 | Question tool | cart | `add a new discount code; offer me three names to choose from` | A menu of choices; the pick is used | not run |
-| 22 | Background command | cart | `start "python3 -m http.server 8123" in the background and check it answers` | Job is tracked in the footer and `/tasks`; `/tasks stop 1` ends it | not run |
-| 23 | Web fetch | cart | `fetch https://example.com and give me the title` | Asks by host; answer has the title | not run |
-| 24 | Fetch rule | cart | choose "don't ask again" for the host, fetch again | No second prompt | not run |
-| 25 | Hook blocks a tool | cart | PreToolUse hook on `bash` that exits 2 for `git push`; `push this branch` | Blocked with the hook's message; the model stops | not run |
+| 21 | Question tool | cart | `add a new discount code; offer me three names to choose from` | A menu of choices; the pick is used | pass, model. The model listed three names in plain text and asked; it did not use the question tool. Answering `2` added that code. (In scenario 25 it used the tool unprompted, with a menu.) |
+| 22 | Background command | cart | `start "python3 -m http.server 8123" in the background and check it answers` | Job is tracked in the footer and `/tasks`; `/tasks stop 1` ends it | defect, then pass. Server started as a tracked job, `curl` got 200, footer showed "1 in background", `/tasks stop 1` ended it. `/tasks` listed the `cd` in front of the command and not the program; fixed in COMMIT |
+| 23 | Web fetch | cart | `fetch https://example.com and give me the title` | Asks by host; answer has the title | defect, then pass. The fetched text had no title, so the model fell back to `curl`. Fixed in COMMIT; rerun answered from the fetch alone |
+| 24 | Fetch rule | cart | choose "don't ask again" for the host, fetch again | No second prompt | pass. After "don't ask again" for the host, the second fetch did not ask |
+| 25 | Hook blocks a tool | cart | PreToolUse hook on `bash` that exits 2 for `git push`; `push this branch` | Blocked with the hook's message; the model stops | defect, then pass. The push was blocked with the hook's message. The model called it a server-side hook; the message now says the user's own hook stopped it before it ran (COMMIT), and the rerun reported it that way |
 | 26 | Hook after edit | cart | PostToolUse hook on `edit` that appends to a log | Log has a line per edit | not run |
 | 27 | Stop hook | cart | Stop hook that exits 2 unless `npm test` passes; ask for a change that breaks a test | The model is sent back to fix it, at most three times | not run |
 | 28 | Folder trust | cart | project settings with a hook; start; answer No, then restart and Yes | Hook is off, then on; the answer is remembered | not run |
@@ -77,6 +77,9 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 20 | A session stopped at 40 steps on a four-file change | 41c27b6: 100 steps a turn in a session, 40 kept for task runs | none: a default |
 | 20 | At the step limit the summary was a tool call printed as raw text | 41c27b6 | `test/loop.test.ts` "a wrap-up that is another tool call written as text is replaced by a plain note" |
 | 20 | The checklist was sent unmarked each time, so nothing was ticked | 41c27b6: the tool's reply says how to tick an item | `test/extra-tools.test.ts`, the checklist test |
+| 22 | `/tasks` showed `cd /long/path…` in place of the program's name | COMMIT | `e2e/screen.test.ts` "/tasks names the program, not the cd to the project folder the model put in front of it" |
+| 23 | Fetched pages lost their title | COMMIT | `test/extra-tools.test.ts`, the HTML-to-text test |
+| 25 | A block by the user's hook read to the model like a refusal from the remote | COMMIT | `e2e/hooks.test.ts`, the two block tests |
 
 ## Model behaviour recorded
 
@@ -92,3 +95,5 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 - Scenario 13: "don't ask again" offers a rule for every `node` command. `node -e` runs any code, the same reason `sh` was taken off that list. `python`, `ruby`, `perl`, `bun` and `deno` are the same. Taking them off changes a permission default, so it waits for a decision.
 - Scenario 19: `echo` is not on the list of commands that never ask, so `ls x || echo "none"` still asks. Adding it changes a permission default.
 - Still open, cosmetic: a `read` of the project folder itself shows the absolute path in the tool line.
+- Scenario 25: `git branch --show-current`, `git remote -v` and `git config --get` are read-only but ask. Adding them to the commands that never ask changes a permission default.
+- Still open, cosmetic: the approval for a background command does not say it will run in the background.

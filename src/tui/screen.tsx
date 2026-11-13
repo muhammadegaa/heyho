@@ -347,7 +347,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
           return say(`Stopped job ${job.id}.`, "dim");
         }
         if (!app.jobs.length) return say("No background commands in this session.", "dim");
-        return say(app.jobs.map((j) => `${j.id}  ${app.jobRunning(j) ? p.green("running") : p.dim(j.exit === undefined || j.exit === null ? "ended" : `exit ${j.exit}`)}  ${j.command.split("\n")[0].slice(0, 60)}  ${p.dim(j.log)}`).join("\n"));
+        return say(app.jobs.map((j) => `${j.id}  ${app.jobRunning(j) ? p.green("running") : p.dim(j.exit === undefined || j.exit === null ? "ended" : `exit ${j.exit}`)}  ${j.command.split("\n")[0].split(app.root + "/").join("").split(app.root).join(".").replace(/^cd \. && /, "").slice(0, 60)}  ${p.dim(j.log)}`).join("\n"));
       }
       case "rewind": {
         if (!app.checkpoints.length) return say("Nothing to go back to yet.", "dim");

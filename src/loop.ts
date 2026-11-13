@@ -174,7 +174,7 @@ async function runCall(
   let result: ToolResult;
   o.onEvent({ type: "tool_start", name, args });
   const blocked = o.hooks?.before(name, args) ?? null;
-  if (blocked !== null) return { name, args, result: fail(`Blocked by a hook: ${blocked}`) };
+  if (blocked !== null) return { name, args, result: fail(`Not run: a hook the user set up blocked it: ${blocked}`) };
   try {
     result = await tool.run(args, o.ctx);
   } catch (e) {

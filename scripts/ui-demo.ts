@@ -28,7 +28,7 @@ const speed = process.env.DEMO_FAST ? 0.05 : 1;
 const seen: unknown[] = [];
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms * speed));
 const server = createServer((req, res) => {
-  // A page for the fetch tool to get. "$SERVER" in a scripted step is replaced by this server's address.
+  // A page for the fetch tool to get. "$SERVER" in a scripted step is replaced by this server's address, "$ROOT" by the project folder.
   if (req.method !== "POST") return res.writeHead(200, { "Content-Type": "text/html" }).end("<html><head><title>t</title><style>p{}</style></head><body><h1>Docs</h1><p>The answer is 42 &amp; nothing else.</p><script>x()</script></body></html>");
   let body = "";
   req.on("data", (c) => (body += c));
@@ -38,7 +38,7 @@ const server = createServer((req, res) => {
       seen.push(JSON.parse(body));
       writeFileSync(`${process.env.DEMO_ROOT}-requests.json`, JSON.stringify(seen));
     }
-    const s: Step = JSON.parse(JSON.stringify(script.shift() ?? { text: "Nothing more is scripted.\n" }).replaceAll("$SERVER", `http://127.0.0.1:${(server.address() as { port: number }).port}`));
+    const s: Step = JSON.parse(JSON.stringify(script.shift() ?? { text: "Nothing more is scripted.\n" }).replaceAll("$SERVER", `http://127.0.0.1:${(server.address() as { port: number }).port}`).replaceAll("$ROOT", process.env.DEMO_ROOT ?? ""));
     res.writeHead(200, { "Content-Type": "text/event-stream", Connection: "close" });
     const send = (delta: object, finish?: string) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
     await pause(1500);

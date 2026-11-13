@@ -26,7 +26,7 @@ const EDIT = call("edit", { path: "greet.js", old_string: '"hello"', new_string:
 test("a PreToolUse hook that exits 2 blocks the call, and its message reaches the model", () => {
   const r = run(["change it"], { PreToolUse: [{ matcher: "edit", command: "echo 'greet.js is frozen this week' >&2; exit 2" }] }, [EDIT, reply("Understood.\n")]);
   expect(readFileSync(join(r.root, "greet.js"), "utf8")).toContain('"hello"');
-  expect(r.last().find((m) => m.role === "tool")!.content).toBe("Blocked by a hook: greet.js is frozen this week");
+  expect(r.last().find((m) => m.role === "tool")!.content).toBe("Not run: a hook the user set up blocked it: greet.js is frozen this week");
 });
 
 test("a hook gets the event as JSON on stdin, and exit 0 lets the call run", () => {
@@ -72,7 +72,7 @@ test("a SessionStart hook's output is given to the model with the first message"
 
 test("Claude Code's nested hook format is read as well", () => {
   const r = run(["change it"], { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "echo nested >&2; exit 2" }] }] }, [EDIT, reply("ok\n")]);
-  expect(r.last().find((m) => m.role === "tool")!.content).toBe("Blocked by a hook: nested");
+  expect(r.last().find((m) => m.role === "tool")!.content).toBe("Not run: a hook the user set up blocked it: nested");
 });
 
 test("a hook that fails for its own reasons does not block: the run goes on and the failure is shown", () => {
