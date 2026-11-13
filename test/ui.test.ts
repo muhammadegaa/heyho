@@ -222,6 +222,12 @@ test("a session reloads its messages, starting after the last reset", async () =
   expect(listSessions(dir, 10, { headless: true }).map((x) => x.first)).toContain("one-off question");
 });
 
+test("sessions opened in the same millisecond get separate files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "heyho-state-"));
+  const files = new Set(Array.from({ length: 20 }, () => newSession(dir).file));
+  expect(files.size).toBe(20);
+});
+
 test("paths are shown relative to the project, and with ~ under the home folder", async () => {
   const { tidyPaths } = await import("../src/ui.ts");
   const { homedir } = await import("node:os");

@@ -1,6 +1,6 @@
 // A session is a JSONL file: one meta line, then every message and usage record in order.
 // A {reset:true} line means the messages before it were dropped (/clear, /compact).
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CARRY_ON, NOTES_PREFIX } from "./compact.ts";
 import type { Message } from "./model.ts";
@@ -10,7 +10,12 @@ export type Session = { file: string; record: (entry: object) => void };
 export function newSession(stateDir: string): Session {
   const dir = join(stateDir, "sessions");
   mkdirSync(dir, { recursive: true });
-  const file = join(dir, `${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
+  // Two sessions opened in the same millisecond would share a file; the later one takes the next free one.
+  const name = (t: number) => join(dir, `${new Date(t).toISOString().replace(/[:.]/g, "-")}.jsonl`);
+  let at = Date.now();
+  while (existsSync(name(at))) at++;
+  const file = name(at);
+  writeFileSync(file, "");
   return { file, record: (entry) => appendFileSync(file, JSON.stringify({ t: Date.now(), ...entry }) + "\n") };
 }
 
