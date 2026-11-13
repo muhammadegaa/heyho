@@ -79,6 +79,21 @@ Every scenario again, on the code with pass 1's fixes. Started 2026-11-13 with t
 | 27 | Stop hook | pass. The screen showed "A Stop hook sent the model back to work: npm test is failing…"; tests passed at the end |
 | 29 | MCP, real server | pass. A call with no arguments got the schema back with no approval prompt; only the real call asked |
 | 39 | Automatic shortening | defect, then pass. The task was changed so it can finish: one line written to a file after each of 36 files. First run: after 20 files the conversation was shortened and the model's whole notes were one line naming its next step, so the task was lost (35a37b3). Rerun: shortened twice in one turn, all 36 lines written with no duplicates, and the model said DONE with a total. 15 minutes |
+| 1 | Read-only question | pass |
+| 2 | Edit, ask mode | pass |
+| 3 | Decline with a correction | pass. Retried as HALFOFF |
+| 4 | Edit, then verify | pass. 3 tests pass; `npm test` did not ask |
+| 5 | Saved command rule | pass |
+| 6 | Auto mode | pass. No `subtotal` left; 3 tests pass |
+| 7 | Plan mode | pass. No changes |
+| 8 | Plan, keep planning | pass. Still no changes |
+| 9 | Plan, carry out | pass. `tax` added; 3 tests pass |
+| 10 | dontask mode | pass. README still there |
+| 11 | Deny rule | pass. File still there |
+| 12 | Allow rule from settings | pass. Trust question, then `node -e` ran without asking |
+| 13 | Chained command | pass. Same as pass 1 |
+| 14 | Yolo, headless | pass. Test added; 3 pass |
+| 15 | Sandbox holds | pass. Nothing written to the home folder; this time the model asked before writing elsewhere |
 
 ## Defects found
 
