@@ -25,6 +25,9 @@ export type ChatOpts = {
   onCall?: (name: string, argChars: number) => void; // a tool call is being written
   onRetry?: (reason: string) => void;
   signal?: AbortSignal;
+  // false asks a local server (a profile with no API key) to skip the model's thinking for this reply. Used where thinking
+  // only costs time (writing notes) or has just run to the output limit.
+  think?: boolean;
 };
 
 const FIRST_BYTE_MS = 600_000;
@@ -41,6 +44,7 @@ export async function chat(p: Profile, messages: Message[], tools: ToolSchema[],
     stream_options: { include_usage: true },
     max_tokens: p.maxTokens,
     ...p.sampling,
+    ...(opts.think === false && !p.apiKey ? { chat_template_kwargs: { enable_thinking: false } } : {}),
   });
   for (let attempt = 0; ; attempt++) {
     try {

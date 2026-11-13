@@ -126,6 +126,7 @@ test("shortening keeps the system prompt and the model's notes", async () => {
   expect(after[0]).toEqual(before[0]);
   expect((after[1] as { content: string }).content).toContain("Notes: changed a.txt.");
   expect(requests[0].tool_choice).toBe("none");
+  expect((requests[0] as { chat_template_kwargs?: object }).chat_template_kwargs).toEqual({ enable_thinking: false });
   expect(JSON.stringify(requests[0].messages.slice(0, 3))).toBe(JSON.stringify(before));
 });
 
@@ -159,6 +160,9 @@ test("a reply that was all thinking and hit the output limit is not replayed, an
   const sent = requests[1].messages as { role: string; content: string | null; reasoning_content?: string }[];
   expect(JSON.stringify(sent)).not.toContain("xxxx");
   expect(sent.at(-1)!.content).toMatch(/whole reply thinking/);
+  // The retry goes without thinking, so it cannot run out of room the same way.
+  expect((requests[1] as { chat_template_kwargs?: object }).chat_template_kwargs).toEqual({ enable_thinking: false });
+  expect((requests[0] as { chat_template_kwargs?: object }).chat_template_kwargs).toBeUndefined();
 });
 
 test("a second cutoff in a row stops the run with every call answered", async () => {

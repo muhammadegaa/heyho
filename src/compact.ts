@@ -22,7 +22,7 @@ export async function compact(profile: Profile, messages: Message[], schemas: To
       m.role === "tool" && typeof m.content === "string" && m.content.length > keep ? { ...m, content: `${m.content.slice(0, keep)}\n[cut to make room: ${m.content.length - keep} more characters]` } : m,
     );
     try {
-      reply = await chat(profile, [...fitted, { role: "user", content: ASK }], schemas, { ...opts, toolChoice: "none" });
+      reply = await chat(profile, [...fitted, { role: "user", content: ASK }], schemas, { ...opts, toolChoice: "none", think: false });
       break;
     } catch (e) {
       if (!(e instanceof ContextOverflowError) || keep === 200) throw e;
@@ -34,7 +34,7 @@ export async function compact(profile: Profile, messages: Message[], schemas: To
   const notes = (r: typeof reply) => (textToolCalls(r.message.content)?.rest ?? r.message.content ?? "").trim();
   let summary = notes(reply);
   if (summary.length < 20 && textToolCalls(reply.message.content)) {
-    const again = await chat(profile, [{ role: "system", content: "You write short plain-text notes. You have no tools." }, { role: "user", content: `${transcriptTail(messages)}\n\n${ASK}` }], [], opts);
+    const again = await chat(profile, [{ role: "system", content: "You write short plain-text notes. You have no tools." }, { role: "user", content: `${transcriptTail(messages)}\n\n${ASK}` }], [], { ...opts, think: false });
     summary = notes(again);
     if (summary.length < 20) summary = `(No notes were written.) What the user asked for, in order:\n${asked(messages).map((t) => `- ${t}`).join("\n")}`;
   }

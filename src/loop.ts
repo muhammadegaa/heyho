@@ -61,6 +61,7 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
   };
   let mistakes = 0;
   let cutoffs = 0;
+  let thoughtOut = false; // the last reply was all thinking and hit the limit: the next one goes without
 
   for (let step = 1; step <= o.maxSteps; step++) {
     if (o.signal?.aborted) return { status: "interrupted" };
@@ -68,7 +69,8 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
     let reply: Reply;
     try {
       o.onEvent({ type: "request", step });
-      reply = await chat(o.profile, o.messages, schemas, { ...streamEvents(o), signal: o.signal });
+      reply = await chat(o.profile, o.messages, schemas, { ...streamEvents(o), signal: o.signal, think: thoughtOut ? false : undefined });
+      thoughtOut = false;
     } catch (e) {
       if (e instanceof ContextOverflowError) return { status: "context_full", reason: e.message };
       throw e;
@@ -105,6 +107,7 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
       o.stats.cutoffs++;
       for (const c of calls) push({ role: "tool", tool_call_id: c.id, content: CUTOFF_RESULT });
       if (++cutoffs >= CUTOFF_STOP) return { status: "stopped", reason: "the model's reply hit the output token limit twice in a row" };
+      thoughtOut = allThinking;
       if (allThinking) push({ role: "user", content: "You spent the whole reply thinking and wrote nothing. Do not work it all out again: answer now, briefly, from what you already know, or make one tool call." });
       else if (!calls.length) push({ role: "user", content: "Your reply was cut off by the output token limit. Continue from where you stopped, in smaller pieces." });
       continue;
@@ -143,7 +146,7 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
   push({ role: "user", content: "You have reached the step limit. Do not call any tools. Reply with what you changed, what is left to do, and the current state." });
   o.onEvent({ type: "request", step: o.maxSteps + 1 });
   // Not streamed: some models answer with another tool call written as text, which is cut out here.
-  const wrap = await chat(o.profile, o.messages, schemas, { toolChoice: "none", ...streamEvents(o), onText: undefined, signal: o.signal });
+  const wrap = await chat(o.profile, o.messages, schemas, { toolChoice: "none", ...streamEvents(o), onText: undefined, signal: o.signal, think: false });
   o.stats.turns.push(wrap.usage);
   const tried = textToolCalls(wrap.message.content);
   const summary = (tried ? tried.rest : wrap.message.content ?? "").trim() || "No summary: at the step limit the model tried to call another tool instead of saying what is left.";
