@@ -42,11 +42,11 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 23 | Web fetch | cart | `fetch https://example.com and give me the title` | Asks by host; answer has the title | defect, then pass. The fetched text had no title, so the model fell back to `curl`. Fixed in 69f55f6; rerun answered from the fetch alone |
 | 24 | Fetch rule | cart | choose "don't ask again" for the host, fetch again | No second prompt | pass. After "don't ask again" for the host, the second fetch did not ask |
 | 25 | Hook blocks a tool | cart | PreToolUse hook on `bash` that exits 2 for `git push`; `push this branch` | Blocked with the hook's message; the model stops | defect, then pass. The push was blocked with the hook's message. The model called it a server-side hook; the message now says the user's own hook stopped it before it ran (69f55f6), and in the rerun the model called it "a pre-push hook in place", which is closer but still not "your project's own hook" |
-| 26 | Hook after edit | cart | PostToolUse hook on `edit` that appends to a log | Log has a line per edit | not run |
-| 27 | Stop hook | cart | Stop hook that exits 2 unless `npm test` passes; ask for a change that breaks a test | The model is sent back to fix it, at most three times | not run |
-| 28 | Folder trust | cart | project settings with a hook; start; answer No, then restart and Yes | Hook is off, then on; the answer is remembered | not run |
-| 29 | MCP, real server | cart | `.mcp.json` with a published stdio server; `/mcp`; a task that needs one of its tools | Tools are listed; the call asks first; the result is used | not run |
-| 30 | MCP rule | cart | "don't ask again" for that server, call again | No second prompt | not run |
+| 26 | Hook after edit | cart | PostToolUse hook on `edit` that appends to a log | Log has a line per edit | pass. One line in the log per edit |
+| 27 | Stop hook | cart | Stop hook that exits 2 unless `npm test` passes; ask for a change that breaks a test | The model is sent back to fix it, at most three times | defect, then pass. The hook sent the model back and it worked until `npm test` passed (3 pass, checked outside heyho). Nothing on screen said a hook had done that; fixed in 85b4261 |
+| 28 | Folder trust | cart | project settings with a hook; start; answer No, then restart and Yes | Hook is off, then on; the answer is remembered | pass. No: the hook stayed off and `/hooks` said why. Yes: the hook ran. A third start did not ask again |
+| 29 | MCP, real server | cart | `.mcp.json` with a published stdio server; `/mcp`; a task that needs one of its tools | Tools are listed; the call asks first; the result is used | defect, then pass. `@modelcontextprotocol/server-everything` over stdio: tools listed by `/mcp`, the call asked first, `echo` returned "Echo: hello heyho". The model's first call had no arguments and still asked for approval; fixed in 85b4261 |
+| 30 | MCP rule | cart | "don't ask again" for that server, call again | No second prompt | pass. After "don't ask again" for the server, a new session called `get-sum` without asking and got 42 |
 | 31 | Skill | cart | a `changelog` skill; `add a changelog entry for discount` | The model reads the skill file and follows its format | not run |
 | 32 | Subagent | big | a `reviewer` agent; `have the reviewer check src/diff.ts` | Subagent lines are indented; its report comes back; it edits nothing | not run |
 | 33 | Custom command | cart | `.heyho/commands/review.md` with `$ARGUMENTS`; `/review src/cart.js` | The file is reviewed, nothing edited | not run |
@@ -80,6 +80,8 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 22 | `/tasks` showed `cd /long/path…` in place of the program's name | 69f55f6 | `e2e/screen.test.ts` "/tasks names the program, not the cd to the project folder the model put in front of it" |
 | 23 | Fetched pages lost their title | 69f55f6 | `test/extra-tools.test.ts`, the HTML-to-text test |
 | 25 | A block by the user's hook read to the model like a refusal from the remote | 69f55f6 | `e2e/hooks.test.ts`, the two block tests |
+| 27 | A Stop hook sent the model back to work with nothing shown to the user | 85b4261 | `e2e/hooks.test.ts` "a Stop hook that exits 2 sends the model back to work, at most three times" |
+| 29 | An MCP call with no arguments asked for approval before failing | 85b4261 | `e2e/mcp.test.ts` "a call that leaves out required arguments gets the schema back without asking the user" |
 
 ## Model behaviour recorded
 
@@ -89,6 +91,8 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 
 - Scenario 20: the model named a field `quiet` on a class that already had a `quiet()` method, and found it from the type check. It also tried `cat -A`, which macOS does not have.
 - Scenario 20: to test its own work the model ran heyho inside heyho. With one server slot, each nested run evicts the outer session's cached prompt, so the next outer step waited over a minute.
+
+- Scenario 27: told not to edit the tests, the model edited a test anyway once the Stop hook insisted the suite pass. The two instructions conflicted.
 
 ## Questions for Ega
 
