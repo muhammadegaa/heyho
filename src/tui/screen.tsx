@@ -1,6 +1,6 @@
 // The interactive screen: the transcript scrolls above, and below it sit whatever is in
 // progress, any question for the user, the input box and a footer.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,6 +14,7 @@ import { heyhoHome } from "../settings.ts";
 import type { SessionInfo } from "../session.ts";
 import { changeTitle, paint, renderDiff } from "../ui.ts";
 import * as ed from "./edit.ts";
+import { normalKey } from "./vim.ts";
 import { secs, type Store } from "./store.ts";
 
 const p = paint(true);
@@ -159,9 +160,27 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const setOverlay = (o: Overlay | null) => (setFilter(""), setOverlayRaw(o));
   const stash = useRef<string | null>(null);
   const [showTodos, setShowTodos] = useState(true);
+  const [vimInsert, setVimInsert] = useState(true); // with vim keys on: typing text, or giving commands
+  const vimPending = useRef("");
+  const [statusText, setStatusText] = useState("");
+
   const [choice, setChoice] = useState(0); // selected row of the approval or overlay list
   const [saying, setSaying] = useState<ed.Edit | null>(null); // typing what to do instead
   const [busy, setBusy] = useState(false);
+
+  // The user's own status line: run after each turn and when the mode changes.
+  useEffect(() => {
+    if (!app.statusCommand || busy) return;
+    const child = spawn("/bin/bash", ["-c", app.statusCommand], { cwd: app.root, stdio: ["pipe", "pipe", "ignore"] });
+    let out = "";
+    child.stdout.on("data", (b) => (out += b));
+    child.on("close", () => setStatusText(out.split("\n")[0].trim().slice(0, 80)));
+    child.on("error", () => setStatusText(""));
+    child.stdin.on("error", () => {});
+    child.stdin.end(JSON.stringify({ model: app.profile.model, cwd: app.root, mode: app.mode, contextUsed: app.contextUsed, contextSize: app.contextSize, session: app.session.file, sessionName: app.name }));
+    const timer = setTimeout(() => child.kill(), 3000);
+    return () => clearTimeout(timer);
+  }, [busy, app.mode, app.name]);
   const [, setTick] = useState(0);
   const refresh = () => setTick((t) => t + 1);
   const lastEsc = useRef(0);
@@ -555,7 +574,31 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       return;
     }
 
-    // The input box.
+    // The input box. With vim keys on, Esc leaves insert mode first, and letters are commands in normal mode.
+    if (app.vim) {
+      if (key.escape && vimInsert && !menuOpen) return setVimInsert(false);
+      if (!vimInsert && input && !key.ctrl && !key.meta && !key.return && !key.tab && !key.escape) {
+        let now = edit; // several keys can arrive at once; each acts on the result of the one before
+        for (const ch of input) {
+          const next = normalKey({ edit: now, insert: false, pending: vimPending.current }, ch);
+          if (!next) {
+            // j or k at the edge of the text: move through earlier messages.
+            const h = history.current;
+            if (ch === "k" && historyAt.current < h.length - 1) setEdit(ed.at(h[++historyAt.current]));
+            else if (ch === "j" && historyAt.current >= 0) setEdit(ed.at(--historyAt.current < 0 ? "" : h[historyAt.current]));
+            return;
+          }
+          vimPending.current = next.pending;
+          now = next.edit;
+          if (next.insert) {
+            setVimInsert(true);
+            now = ed.insert(now, input.slice(input.indexOf(ch) + 1)); // the rest of the burst is text
+            break;
+          }
+        }
+        return change(now);
+      }
+    }
     if (key.escape) {
       if (menuOpen) return setMenuOff(true);
       if (busy) return app.interrupt();
@@ -590,6 +633,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       if (!typed) return;
       setEdit(ed.EMPTY);
       setMenuOff(false);
+      setVimInsert(true);
       return submit(typed);
     }
     if (input === "\n" || (key.ctrl && input === "j")) return change(ed.insert(edit, "\n"));
@@ -751,7 +795,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
               ))}
             </Box>
           ) : (
-            <Footer width={width} mode={app.mode} hint={exitHint ? "press ctrl+c again to quit" : `${MODE_SHORT[app.mode]} · shift+tab changes`} right={`${app.jobs.filter((j) => app.jobRunning(j)).length ? `${app.jobs.filter((j) => app.jobRunning(j)).length} in background · ` : ""}${app.name ? `${app.name} · ` : ""}${app.profile.model} · ${pct}% context`} />
+            <Footer width={width} mode={app.mode} hint={exitHint ? "press ctrl+c again to quit" : app.vim ? (vimInsert ? "-- INSERT --" : "-- NORMAL --") : `${MODE_SHORT[app.mode]} · shift+tab changes`} right={statusText || `${app.jobs.filter((j) => app.jobRunning(j)).length ? `${app.jobs.filter((j) => app.jobRunning(j)).length} in background · ` : ""}${app.name ? `${app.name} · ` : ""}${app.profile.model} · ${pct}% context`} />
           )}
         </Box>
       ) : null}

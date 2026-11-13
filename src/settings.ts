@@ -9,7 +9,16 @@ export const heyhoHome = () => process.env.HEYHO_HOME ?? join(homedir(), ".heyho
 
 export type Source = "user" | "project" | "local" | "saved" | "session";
 export type RuleList = { allow?: string[]; ask?: string[]; deny?: string[] };
-export type Settings = { mode?: string; profile?: string; maxSteps?: number; permissions?: RuleList; hooks?: unknown };
+export type Settings = {
+  mode?: string;
+  profile?: string;
+  maxSteps?: number;
+  permissions?: RuleList;
+  hooks?: unknown;
+  editorMode?: "vim" | "normal"; // vim keys in the input box
+  theme?: "default" | "none"; // none: no colours
+  statusLine?: { command?: string }; // a command whose first line of output replaces the right of the footer
+};
 export type Layer = { source: Source; file: string; settings: Settings };
 
 export const settingsFiles = (root: string): [Source, string][] => [
@@ -29,6 +38,6 @@ export function loadSettings(root: string): { merged: Settings; layers: Layer[];
       problems.push(`${file} is not valid JSON and was ignored: ${(e as Error).message}`);
     }
   }
-  const merged: Settings = Object.assign({}, ...layers.map((l) => ({ mode: l.settings.mode, profile: l.settings.profile, maxSteps: l.settings.maxSteps })).map((s) => Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined))));
+  const merged: Settings = Object.assign({}, ...layers.map((l) => ({ mode: l.settings.mode, profile: l.settings.profile, maxSteps: l.settings.maxSteps, editorMode: l.settings.editorMode, theme: l.settings.theme })).map((s) => Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined))));
   return { merged, layers, problems };
 }

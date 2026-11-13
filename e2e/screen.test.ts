@@ -878,3 +878,67 @@ test("a hook that blocks a call is shown in the transcript", async () => {
   expect(screen).toMatch(/Blocked by a hook: frozen/);
   expect(screen).not.toMatch(/Make this edit\?/);
 });
+
+// ---- look and editing options ----
+
+const CODE = "```ts\nconst total = 42; // the answer\n```\n";
+const COLOUR = /\x1b\[(3[0-7]|9[0-7])m/;
+
+test("code in a reply is coloured: keywords, numbers and comments differ from plain text", async () => {
+  s = await open({ steps: [reply(CODE)] });
+  await s.send("show code");
+  await s.wait(/worked for/);
+  const line = s.styled().split("\n").find((l) => l.includes("total"))!;
+  expect(line).toMatch(/\x1b\[36mconst/);
+  expect(line).toMatch(/\x1b\[33m42/);
+  expect(line).toMatch(/\x1b\[2m\/\/ the answer/);
+});
+
+test("NO_COLOR, or \"theme\": \"none\" in settings, turns colour off", async () => {
+  s = await open({ env: { NO_COLOR: "1" }, steps: [reply(CODE)] });
+  await s.send("show code");
+  await s.wait(/worked for/);
+  expect(s.styled()).not.toMatch(COLOUR);
+  s.close();
+  s = await open({ home: { "settings.json": JSON.stringify({ theme: "none" }) }, steps: [reply(CODE)] });
+  await s.send("show code");
+  await s.wait(/worked for/);
+  expect(s.styled()).not.toMatch(COLOUR);
+  expect(s.screen()).toMatch(/const total = 42;/);
+});
+
+test("vim keys: Esc enters normal mode, motions and deletes work, i returns to typing", async () => {
+  s = await open({ home: { "settings.json": JSON.stringify({ editorMode: "vim" }) }, steps: [reply("ok\n")] });
+  await s.wait(/-- INSERT --/);
+  await s.type("fix the bug");
+  await s.key("Escape");
+  await s.wait(/-- NORMAL --/);
+  await s.type("0wdw");
+  await s.wait(/› fix bug/);
+  await s.type("A");
+  await s.wait(/-- INSERT --/);
+  await s.type(" now");
+  await s.wait(/› fix bug now/);
+  await s.key("Escape");
+  await s.type("dd");
+  await s.wait(/describe a task/);
+  await s.type("ihello");
+  await s.key("Enter");
+  await s.wait(/› hello[\s\S]*worked for/);
+});
+
+test("without the setting, letters after Esc are just text", async () => {
+  s = await open();
+  await s.type("abc");
+  await s.key("Escape");
+  await s.type("dd");
+  await s.wait(/› abcdd/);
+});
+
+test("a status line command's output replaces the right of the footer and follows the mode", async () => {
+  s = await open({ home: { "settings.json": JSON.stringify({ statusLine: { command: "grep -o '\"mode\":\"[a-z]*\"' | tr -d '\"' | sed 's/^/my line · /'" } }) } });
+  await s.wait(/my line · mode:ask/);
+  await s.key("BTab");
+  await s.wait(/my line · mode:auto/);
+  expect(s.screen()).not.toMatch(/% context/);
+});

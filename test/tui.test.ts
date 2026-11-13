@@ -69,3 +69,36 @@ test("an approval waits for an answer and then lets the work continue", async ()
   expect(s.live.pending).toBeNull();
   expect(s.live.activity?.label).toBe("running npm test");
 });
+
+test("vim normal mode: moving, entering insert, deleting and changing", async () => {
+  const { normalKey } = await import("../src/tui/vim.ts");
+  const run = (value: string, cursor: number, keys: string) => {
+    let s = { edit: { value, cursor }, insert: false, pending: "" };
+    for (const k of keys) s = normalKey(s, k)!;
+    return s;
+  };
+  expect(run("fix the bug", 0, "w").edit.cursor).toBe(4);
+  expect(run("fix the bug", 0, "ww").edit.cursor).toBe(8);
+  expect(run("fix the bug", 8, "b").edit.cursor).toBe(4);
+  expect(run("fix the bug", 5, "0").edit.cursor).toBe(0);
+  expect(run("fix the bug", 0, "$").edit.cursor).toBe(11);
+  expect(run("fix the bug", 4, "dw").edit).toEqual({ value: "fix bug", cursor: 4 });
+  expect(run("fix the bug", 4, "cw")).toEqual({ edit: { value: "fix  bug", cursor: 4 }, insert: true, pending: "" });
+  expect(run("fix the bug", 4, "x").edit.value).toBe("fix he bug");
+  expect(run("fix the bug", 4, "D").edit.value).toBe("fix ");
+  expect(run("one\ntwo\nthree", 5, "dd").edit).toEqual({ value: "one\nthree", cursor: 4 });
+  expect(run("one", 1, "A")).toMatchObject({ edit: { cursor: 3 }, insert: true });
+  expect(run("one", 1, "o")).toMatchObject({ edit: { value: "one\n", cursor: 4 }, insert: true });
+  expect(run("one", 1, "d").pending).toBe("d");
+  expect(normalKey({ edit: { value: "one", cursor: 1 }, insert: false, pending: "" }, "k")).toBeNull();
+});
+
+test("code is coloured by rough rules: comments, strings, numbers, keywords", async () => {
+  const { highlight } = await import("../src/highlight.ts");
+  const tag: Record<string, (s: string) => string> = { dim: (s) => `<c>${s}</c>`, green: (s) => `<s>${s}</s>`, yellow: (s) => `<n>${s}</n>`, cyan: (s) => `<k>${s}</k>`, red: (s) => s, bold: (s) => s };
+  const paint = tag as unknown as Parameters<typeof highlight>[2];
+  expect(highlight('const x = "a // b"; // note 1', "ts", paint)).toBe('<k>const</k> x = <s>"a // b"</s>; <c>// note 1</c>');
+  expect(highlight("def f(n): return n + 42  # add", "python", paint)).toBe("<k>def</k> f(n): <k>return</k> n + <n>42</n>  <c># add</c>");
+  expect(highlight("return the 3 files", "text", paint)).toBe("return the <n>3</n> files");
+  expect(highlight("#include <x>", "c", paint)).toBe("#include <x>");
+});

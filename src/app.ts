@@ -84,6 +84,8 @@ export class App {
   running: AbortController | null = null;
   tools: Tool[] = TOOLS;
   hooks: Hook[] = [];
+  vim = false;
+  statusCommand = "";
   needsTrust = false; // the project's settings hold hooks or allow rules
   trusted = true;
   private trustFile = "";
@@ -147,6 +149,9 @@ export class App {
     this.trusted = opts.trustProject === true || existsSync(this.trustFile) || !this.needsTrust;
     this.layers = settings.layers.map((l) => (l.source === "project" && !this.trusted ? { ...l, settings: { ...l.settings, hooks: undefined, permissions: { ...l.settings.permissions, allow: [] } } } : l));
     this.hooks = loadHooks(this.layers);
+    this.vim = settings.merged.editorMode === "vim";
+    // Like a hook, a status line command from the project's file runs only once the project is trusted.
+    this.statusCommand = this.layers.filter((l) => l.source !== "project" || this.trusted).map((l) => l.settings.statusLine?.command).filter(Boolean).at(-1) ?? "";
     if (!this.trusted && !opts.canAsk) this.untrustedNote = "This project sets hooks, allow rules or MCP servers. They are off because the project has not been trusted; pass --trust-project to use them.";
     this.approvals = new Approvals(opts.mode, join(this.stateDir, "allowed.json"), this.root, this.layers);
     this.problems = [...settings.problems, ...this.approvals.problems, ...(this.untrustedNote ? [this.untrustedNote] : [])];

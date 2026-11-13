@@ -18,12 +18,17 @@ export const FILES = {
 };
 
 // `root` reuses an earlier session's folder (and so its saved sessions) instead of making a new one.
-export async function open(opts: { steps?: Step[]; files?: Record<string, string>; cols?: number; rows?: number; args?: string[]; git?: boolean; root?: string; env?: Record<string, string> } = {}) {
+export async function open(opts: { steps?: Step[]; files?: Record<string, string>; cols?: number; rows?: number; args?: string[]; git?: boolean; root?: string; env?: Record<string, string>; home?: Record<string, string> } = {}) {
   const name = `heyho-e2e-${process.pid}-${++n}`;
   const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "heyho-e2e-")));
   for (const [path, content] of Object.entries(opts.root ? {} : (opts.files ?? FILES))) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);
+  }
+  // Files for heyho's own folder (in place of ~/.heyho): settings.json, skills, and so on.
+  for (const [path, content] of Object.entries(opts.home ?? {})) {
+    mkdirSync(dirname(join(`${root}-home`, path)), { recursive: true });
+    writeFileSync(join(`${root}-home`, path), content);
   }
   if (opts.git) spawnSync("sh", ["-c", "git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init"], { cwd: root });
   const stepsFile = `${root}-steps.json`; // beside the project, so the agent never finds it
@@ -36,6 +41,8 @@ export async function open(opts: { steps?: Step[]; files?: Record<string, string
     home: `${root}-home`, // heyho's own folder for this test, in place of ~/.heyho
     // The visible rows, without trailing blanks.
     screen: () => tmux("capture-pane", "-t", name, "-p").stdout.replace(/\s+$/, ""),
+    // The same rows with their colour and style codes.
+    styled: () => tmux("capture-pane", "-t", name, "-p", "-e").stdout,
     // Everything printed so far, including what has scrolled off.
     scrollback: () => tmux("capture-pane", "-t", name, "-p", "-S", "-500").stdout.replace(/\s+$/, ""),
     type: async (text: string) => (tmux("send-keys", "-t", name, "-l", text), await sleep(120)),

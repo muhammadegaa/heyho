@@ -81,6 +81,7 @@ async function main() {
   // A flag wins over the environment, which wins over settings files, which win over the defaults.
   const cwd = realpathSync(opt.cwd ?? process.cwd());
   const { merged: settings } = loadSettings(cwd);
+  if (settings.theme === "none") process.env.NO_COLOR = "1";
   const mode = opt.mode ?? settings.mode ?? "ask";
   if (!["ask", "auto", "plan", "dontask"].includes(mode)) throw new Error(`The mode is "ask", "auto", "plan" or "dontask", not "${mode}".`);
 

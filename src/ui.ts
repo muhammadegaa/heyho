@@ -2,14 +2,16 @@
 // model's own text, which goes to stdout so `heyho "task" > file` captures only the answer.
 // Without a terminal on stderr the output is the plain line format the eval logs use.
 import { diffLines } from "./diff.ts";
+import { highlight } from "./highlight.ts";
 import type { AgentEvent, RunResult } from "./loop.ts";
 import type { Change } from "./tools/types.ts";
 
 const esc = (code: string) => (s: string) => `\x1b[${code}m${s}\x1b[0m`;
 const same = (s: string) => s;
 export type Paint = Record<"dim" | "red" | "green" | "yellow" | "cyan" | "bold", (s: string) => string>;
+// NO_COLOR (https://no-color.org) and "theme": "none" in settings turn every style off.
 export const paint = (on: boolean): Paint =>
-  on
+  on && !process.env.NO_COLOR
     ? { dim: esc("2"), red: esc("31"), green: esc("32"), yellow: esc("33"), cyan: esc("36"), bold: esc("1") }
     : { dim: same, red: same, green: same, yellow: same, cyan: same, bold: same };
 
@@ -30,6 +32,7 @@ const stripInline = (t: string) => t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/
 export class Markdown {
   private buf = "";
   private fence = false;
+  private lang = "";
   private table: string[] = [];
   private p: Paint;
   constructor(p: Paint) {
@@ -95,9 +98,10 @@ export class Markdown {
     const fence = l.match(/^\s*```\s*(\S*)/);
     if (fence) {
       this.fence = !this.fence;
+      this.lang = this.fence ? fence[1] : "";
       return this.fence && fence[1] ? dim(fence[1]) : null;
     }
-    if (this.fence) return dim("│ ") + l;
+    if (this.fence) return dim("│ ") + highlight(l, this.lang, this.p);
     const heading = l.match(/^#{1,6}\s+(.*)$/);
     if (heading) return bold(heading[1].replace(/\*\*/g, ""));
     const quote = l.match(/^\s*>\s?(.*)$/);
