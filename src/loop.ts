@@ -37,6 +37,8 @@ export type RunOptions = {
   onEvent: (e: AgentEvent) => void;
   record: (m: Message | { usage: Usage }) => void;
   signal?: AbortSignal;
+  // The user's hooks around a tool call: `before` returns a reason to block it, `after` a message to add to its result.
+  hooks?: { before: (name: string, args: Record<string, unknown>) => string | null; after: (name: string, args: Record<string, unknown>, result: ToolResult) => string | null };
 };
 
 export type RunResult = { status: "done" | "step_limit" | "stopped" | "interrupted" | "context_full"; reason?: string };
@@ -166,11 +168,15 @@ async function runCall(
   if (repeats >= IDENTICAL_STOP) return { name, args, result: fail(`[stopped] This exact call was made ${repeats} times in a row.`) };
   let result: ToolResult;
   o.onEvent({ type: "tool_start", name, args });
+  const blocked = o.hooks?.before(name, args) ?? null;
+  if (blocked !== null) return { name, args, result: fail(`Blocked by a hook: ${blocked}`) };
   try {
     result = await tool.run(args, o.ctx);
   } catch (e) {
     result = fail((e as Error).message);
   }
+  const reported = o.hooks?.after(name, args, result) ?? null;
+  if (reported !== null) result = { ...result, text: `${result.text}\n\nA hook reported: ${reported}` };
   if (repeats >= IDENTICAL_WARN)
     result = { ...result, text: result.text + `\n\nYou have made this exact call ${repeats} times in a row. It will not give a different result; try something else.` };
   return { name, args, result };

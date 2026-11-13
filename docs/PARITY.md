@@ -13,7 +13,7 @@ Not covered: Claude Code's IDE, desktop, web and cloud features, and anything th
 
 ## Ledger: what has been closed since, and the test that shows it
 
-The tables from section 1 on describe the first run, on 2026-11-12, before any of this. Every row here is covered by an automated test: `e2e/screen.test.ts` drives the real screen in a tmux pane against a scripted server and reads the rendered rows (68 cases); `e2e/headless.test.ts` runs headless commands against the same server (9); `test/` holds the unit tests (71). A row is listed only when its test passes. The scripted server stands in for the model, so these show what heyho does with a given reply, not what a model chooses to reply.
+The tables from section 1 on describe the first run, on 2026-11-12, before any of this. Every row here is covered by an automated test: `e2e/screen.test.ts` drives the real screen in a tmux pane against a scripted server and reads the rendered rows (75 cases); `e2e/headless.test.ts` and `e2e/hooks.test.ts` run headless commands against the same server (20); `test/` holds the unit tests (77). A row is listed only when its test passes. The scripted server stands in for the model, so these show what heyho does with a given reply, not what a model chooses to reply.
 
 | Area | Claude Code behaviour matched | Test (name starts with) |
 |---|---|---|
@@ -49,6 +49,12 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 | System prompt flags | Replace or add to the instructions | --system-prompt replaces… (headless) |
 | Headless sessions | `--continue`, `--resume <name>`, a session name, a turn limit | --continue and --resume <name>…; --max-turns… (headless) |
 | Custom commands | Markdown files as slash commands, with arguments; `.claude/commands` read too | a markdown file in .heyho/commands…; commands in .claude/commands… |
+| Background commands | Start a server and keep working; listed, stoppable, ended on exit | a background command returns at once… (unit); a background command shows in the footer and /tasks…; /tasks stop… |
+| Task list | The model's checklist shown live; Ctrl+T toggles it | the model's checklist is shown as it changes… |
+| Question tool | Options to pick or an answer to type; a headless run is told to decide | the model can ask a question…; a question gets the user's answer… (unit) |
+| Web fetch | Asks first; allow and deny rules by host; page reduced to text | fetching a page asks first…; fetching asks by default; rules name hosts… (unit) |
+| Hooks | Before and after a tool, on a message, on stop, at start; exit 2 blocks; matcher by tool; Claude Code's format read | e2e/hooks.test.ts, 11 cases |
+| Folder trust | A project's hooks and allow rules are off until trusted, asked once | a project with hooks or allow rules asks for trust first…; without trust, a project's hooks do not run in a headless run… |
 | Leaving | Ctrl+C clears, twice quits | Ctrl+C clears typed text… |
 | No server | A message with the command to start one | no server: a plain message… |
 
@@ -64,15 +70,16 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 
 Not started, in the order planned:
 
-1. Tools, each to be kept only if an eval run shows no loss: background commands, a task list, a question tool, web fetch.
-2. Hooks on lifecycle events.
-3. MCP servers.
-4. Skills and subagents.
-5. In the screen: syntax highlighting, vim keys, a configurable status line, themes, image paste.
+1. The eval check for the four new tools on task 07 (see below).
+2. MCP servers.
+3. Skills and subagents.
+4. In the screen: syntax highlighting, vim keys, a configurable status line, themes, image paste.
 
 Different by design, not planned: a second model that reviews each action (Claude Code's `auto` mode). heyho's no-prompt mode contains commands with the macOS sandbox instead. Out of scope: IDE, desktop, web and cloud features.
 
 Regression check on the real model after these changes (Qwen3.6, 2026-11-13, two runs each): task 01 2/2, task 08 2/2, task 07 1/2, against 1/3 on 07 before. One 07 run stopped at the 40-step limit, which no earlier 07 run did.
+
+The four new tools are provisional. They fit the 1,500-token budget for the fixed prompt (1,497). With them, tasks 01 and 08 passed 2/2 each on Qwen3.6. Task 07 was not measured: the Mac slept and both runs sat until the time limit with nothing processed. Until 07 is run on an awake machine, there is no evidence either way on the task where the model's steps matter most.
 
 Limits of this evidence: the tests run in tmux only, so other terminal programs are not covered; and nothing here measures how well a local model uses these features.
 

@@ -37,6 +37,7 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["copy", "", "copy the last reply to the clipboard"],
   ["status", "", "version, model, folder, session"],
   ["tasks", "[stop <n>]", "commands running in the background"],
+  ["hooks", "", "your commands that run around tool calls, messages and stops"],
   ["mode", "[ask|auto|plan|dontask|yolo]", "show or set the mode"],
   ["permissions", "[allow|ask|deny|remove <rule>] [reset]", "rules for what runs without asking, asks, or is refused"],
   ["init", "", "have the model write AGENTS.md for this project"],
@@ -58,6 +59,7 @@ type Choice<T> = { label: string; hint?: string; value: T };
 type Overlay =
   | { type: "resume"; choices: Choice<SessionInfo>[] }
   | { type: "history"; choices: Choice<string>[] }
+  | { type: "trust"; choices: Choice<boolean>[] }
   | { type: "rewind"; choices: Choice<number>[] }
   | { type: "rewindWhat"; index: number; choices: Choice<{ code: boolean; conversation: boolean }>[] }
   | { type: "plan"; choices: Choice<"auto" | "ask" | "keep">[] };
@@ -196,7 +198,9 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
     setOverlay({ type: "resume", choices: list.map((s) => ({ label: s.first, hint: `${s.when.toLocaleString()} · ${s.turns} message${s.turns > 1 ? "s" : ""}`, value: s })) });
   };
   useEffect(() => {
-    if (pickSession) openResume();
+    if (app.needsTrust && !app.trusted)
+      setOverlay({ type: "trust", choices: [{ label: "Yes, I trust this project: use them", value: true }, { label: "No: leave them off", value: false }] });
+    else if (pickSession) openResume();
   }, []);
   useEffect(() => {
     if (pending && app.runningFor > BELL_AFTER_MS) process.stderr.write("\x07");
@@ -300,6 +304,8 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       }
       case "status":
         return say(app.status(version).join("\n"));
+      case "hooks":
+        return say(app.describeHooks().join("\n"));
       case "tasks": {
         const [verb, n] = arg.split(/\s+/);
         const job = app.jobs.find((j) => j.id === Number(n));
@@ -410,6 +416,10 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       return store.note(`Reopened "${o.choices[i].label}". Your next message continues it.`, "dim");
     }
     if (o.type === "history") return setEdit(ed.at(o.choices[i].value));
+    if (o.type === "trust") {
+      if (o.choices[i].value) app.trust();
+      return store.note(o.choices[i].value ? "Trusted. This project's hooks and allow rules are in use, here and next time." : "Left off. The project's ask and deny rules still apply. You will be asked again next time.", "dim");
+    }
     if (o.type === "rewind") {
       const index = o.choices[i].value;
       const changed = app.changes.turnCount > app.checkpoints[index].turn;
@@ -664,10 +674,10 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
         <Box flexDirection="column" marginTop={1}>
           <Rule width={width} />
           <Text bold>
-            {overlay.type === "resume" ? "Reopen a session" : overlay.type === "history" ? "Earlier messages" : overlay.type === "rewind" ? "Go back to before which message?" : overlay.type === "rewindWhat" ? "What should be restored?" : "Carry out this plan?"}
+            {overlay.type === "trust" ? "This project's .heyho/settings.json sets hooks or allow rules, which run commands without asking. Use them?" : overlay.type === "resume" ? "Reopen a session" : overlay.type === "history" ? "Earlier messages" : overlay.type === "rewind" ? "Go back to before which message?" : overlay.type === "rewindWhat" ? "What should be restored?" : "Carry out this plan?"}
           </Text>
           {searchable ? <Text>{`Search: ${filter}`}<Text dimColor>{filter ? "" : "type to narrow the list"}</Text></Text> : null}
-          <List choices={shownChoices!} index={Math.min(choice, Math.max(0, shownChoices!.length - 1))} numbered={overlay.type === "rewindWhat" || overlay.type === "plan"} />
+          <List choices={shownChoices!} index={Math.min(choice, Math.max(0, shownChoices!.length - 1))} numbered={overlay.type === "rewindWhat" || overlay.type === "plan" || overlay.type === "trust"} />
           {shownChoices!.length ? null : <Text dimColor>  nothing matches</Text>}
           <Text dimColor>Enter to choose · Esc to cancel</Text>
         </Box>

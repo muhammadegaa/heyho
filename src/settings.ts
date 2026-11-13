@@ -9,7 +9,7 @@ export const heyhoHome = () => process.env.HEYHO_HOME ?? join(homedir(), ".heyho
 
 export type Source = "user" | "project" | "local" | "saved" | "session";
 export type RuleList = { allow?: string[]; ask?: string[]; deny?: string[] };
-export type Settings = { mode?: string; profile?: string; maxSteps?: number; permissions?: RuleList };
+export type Settings = { mode?: string; profile?: string; maxSteps?: number; permissions?: RuleList; hooks?: unknown };
 export type Layer = { source: Source; file: string; settings: Settings };
 
 export const settingsFiles = (root: string): [Source, string][] => [

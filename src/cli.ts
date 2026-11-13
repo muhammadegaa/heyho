@@ -36,6 +36,8 @@ Options
   --system-prompt <text>        use this in place of heyho's own instructions
   --append-system-prompt <text> add this after them
   --session-name <name> name the session, for --resume
+  --trust-project       use the hooks and allow rules in this project's .heyho/settings.json
+                        without being asked (a session asks once; a headless run needs this)
   --report <file>       write a JSON run report (used by the eval runner)
   --plain               interactive session without the full-screen input box
   --cwd <dir>           working directory
@@ -66,6 +68,7 @@ async function main() {
       "append-system-prompt": { type: "string" },
       "session-name": { type: "string" },
       "max-turns": { type: "string" },
+      "trust-project": { type: "boolean", default: false },
       report: { type: "string" },
       plain: { type: "boolean", default: false },
       cwd: { type: "string" },
@@ -113,6 +116,7 @@ async function main() {
     deny: list(opt["disallowed-tools"]),
     systemPrompt: opt["system-prompt"],
     appendSystemPrompt: opt["append-system-prompt"],
+    trustProject: opt["trust-project"],
   };
 
   if (headless) return runHeadless(options, task, { format: format as Format, report: opt.report });

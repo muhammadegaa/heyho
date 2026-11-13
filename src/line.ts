@@ -67,6 +67,7 @@ export async function runHeadless(opts: AppOptions, task: string, out: { format:
   const app = build(opts, ui, () => (input ??= createInput({ historyFile: join(heyhoHome(), "history"), root: opts.cwd, commands: [] })), tap);
   await app.start();
   emit({ type: "start", model: app.profile.model, cwd: app.root, mode: app.mode, session: app.session.file });
+  for (const problem of app.problems) console.error(ui.colors.yellow(problem));
   console.error(ui.colors.dim(`${app.banner()} · ${app.root}`));
   const onSigint = () => app.interrupt();
   process.on("SIGINT", onSigint);

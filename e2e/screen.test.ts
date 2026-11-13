@@ -629,7 +629,7 @@ test("a deny rule stops a file being read, and hides it from search", async () =
 });
 
 test("an allow rule from the project's settings runs a command without asking", async () => {
-  s = await open({ files: settings({ permissions: { allow: ["bash(node *)"] } }), steps: [BASH, reply("Ran.\n")] });
+  s = await open({ args: ["--trust-project"], files: settings({ permissions: { allow: ["bash(node *)"] } }), steps: [BASH, reply("Ran.\n")] });
   await s.send("run it");
   const screen = await s.wait(/worked for/);
   expect(screen).toMatch(/⏺ bash node greet\.js\s+exit code 0/);
@@ -681,7 +681,7 @@ test("auto mode runs file commands inside the project without asking, but not ot
 });
 
 test("/permissions adds a deny rule for the session and lists rules with where they come from", async () => {
-  s = await open({ files: settings({ permissions: { allow: ["bash(node *)"] } }), steps: [BASH, reply("Blocked.\n")] });
+  s = await open({ args: ["--trust-project"], files: settings({ permissions: { allow: ["bash(node *)"] } }), steps: [BASH, reply("Blocked.\n")] });
   await s.send("/permissions deny bash(node *)");
   const listed = await s.wait(/deny\s+bash\(node \*\)\s+\(this session\)/);
   expect(listed).toMatch(/allow\s+bash\(node \*\)\s+\(project settings\)/);
@@ -839,4 +839,42 @@ test("/tasks stop ends a background command", async () => {
   await s.wait(/Stopped job 1/);
   await s.send("/tasks");
   await s.wait(/1\s+ended\s+sleep 300/);
+});
+
+// ---- trust and hooks ----
+
+test("a project with hooks or allow rules asks for trust first; No leaves them off, Yes is remembered", async () => {
+  const files = settings({ permissions: { allow: ["bash(node *)"] }, hooks: { PreToolUse: [{ matcher: "bash", command: "touch hook-ran.flag" }] } });
+  s = await open({ files, steps: [BASH, reply("Ran.\n")] });
+  expect(s.screen()).toMatch(/sets hooks or allow rules/);
+  await s.key("2");
+  await s.wait(/Left off/);
+  await s.send("run it");
+  await s.wait(/Run this command\?/);
+  expect(existsSync(join(s.root, "hook-ran.flag"))).toBe(false);
+  await s.key("Escape");
+  const root = s.root;
+  s.close();
+
+  s = await open({ root, steps: [BASH, reply("Ran.\n")] });
+  await s.key("1");
+  await s.wait(/Trusted\./);
+  await s.send("/hooks");
+  await s.wait(/PreToolUse\s+bash\s+touch hook-ran\.flag/);
+  await s.send("run it");
+  const screen = await s.wait(/worked for/);
+  expect(screen).not.toMatch(/Run this command\?/);
+  expect(existsSync(join(root, "hook-ran.flag"))).toBe(true);
+  s.close();
+
+  s = await open({ root });
+  expect(s.screen()).not.toMatch(/sets hooks or allow rules/);
+});
+
+test("a hook that blocks a call is shown in the transcript", async () => {
+  s = await open({ args: ["--trust-project"], files: settings({ hooks: { PreToolUse: [{ matcher: "edit", command: "echo frozen >&2; exit 2" }] } }), steps: [EDIT, reply("Okay.\n")] });
+  await s.send("change it");
+  const screen = await s.wait(/worked for/);
+  expect(screen).toMatch(/Blocked by a hook: frozen/);
+  expect(screen).not.toMatch(/Make this edit\?/);
 });

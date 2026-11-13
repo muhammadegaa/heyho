@@ -3,10 +3,11 @@
 // screen, the line mode, or a headless run) supplies `Front` and calls these methods.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Approvals, CYCLE, MODES, PLAN_REFUSAL, type Kind, type Mode } from "./approve.ts";
-import { heyhoHome, loadSettings } from "./settings.ts";
+import { HOOK_EVENTS, loadHooks, runHooks, type Hook, type HookEvent } from "./hooks.ts";
+import { heyhoHome, loadSettings, type Layer } from "./settings.ts";
 import { Changes } from "./changes.ts";
 import { CARRY_ON, compact } from "./compact.ts";
 import { newStats, runAgent, type AgentEvent, type RunResult, type Stats } from "./loop.ts";
@@ -52,11 +53,13 @@ export type AppOptions = {
   deny?: string[];
   systemPrompt?: string;
   appendSystemPrompt?: string;
+  trustProject?: boolean; // use the project's own hooks and allow rules without asking
 };
 
 export const SERVER_HELP = (url: string) =>
   `No model server answered at ${url}.\nStart one, for example:\n  llama-server -m <model.gguf> --jinja -c 65536 --port 8080\nor name another server with --base-url. (llama-server and Ollama are detected; set HEYHO_CTX for others.)`;
 export const INIT_TASK = `Write AGENTS.md at the root of this project: the notes you would want at the start of every session here. Look at the code first. Cover what the project is, how it is laid out, the commands to build, test and lint, and conventions the code follows. Keep it under 60 lines and state only what you verified.`;
+const STOP_HOOK_MAX = 3;
 const PLAN_ON = "[Plan mode is on. Investigate with read, search and read-only commands, then reply with a plan and stop. Do not change anything.]\n\n";
 const PLAN_OFF = "[Plan mode is off. You may now make changes.]\n\n";
 
@@ -78,6 +81,32 @@ export class App {
   resumed?: SessionInfo;
   running: AbortController | null = null;
   tools: Tool[] = TOOLS;
+  hooks: Hook[] = [];
+  needsTrust = false; // the project's settings hold hooks or allow rules
+  trusted = true;
+  private trustFile = "";
+  private untrustedNote = "";
+  private layers: Layer[] = [];
+  private startNote = ""; // what SessionStart hooks printed, given with the first message
+
+  // Records that the user trusts this project, and takes its hooks and allow rules into use.
+  trust() {
+    writeFileSync(this.trustFile, new Date().toISOString());
+    this.trusted = true;
+    const settings = loadSettings(this.root);
+    this.hooks = loadHooks(settings.layers);
+    for (const l of settings.layers.filter((x) => x.source === "project")) for (const rule of l.settings.permissions?.allow ?? []) this.approvals.addRule("allow", rule);
+  }
+
+  private hook(event: HookEvent, payload: Record<string, unknown> = {}) {
+    const outcome = runHooks(this.hooks, event, { session: this.session?.file, ...payload }, this.root);
+    for (const failure of outcome.failures) this.front.note(failure, "warn");
+    return outcome;
+  }
+  describeHooks(): string[] {
+    if (!this.hooks.length) return [this.needsTrust && !this.trusted ? "This project defines hooks, but it is not trusted, so they are off." : "No hooks are set. They go under \"hooks\" in a settings file."];
+    return HOOK_EVENTS.flatMap((e) => this.hooks.filter((h) => h.event === e).map((h) => `${e.padEnd(17)} ${(h.matcher ?? "every tool").padEnd(12)} ${h.command}  (${h.file})`));
+  }
   problems: string[] = []; // settings that could not be used, to show at start
   private folderNotes = new Set<string>(); // subfolder instruction files already given to the model
   get notesFile() {
@@ -107,8 +136,18 @@ export class App {
     this.profileName = opts.profile;
     this.profile = loadProfile(opts.profile, { baseUrl: opts.baseUrl, model: opts.model });
     const settings = loadSettings(this.root);
-    this.approvals = new Approvals(opts.mode, join(this.stateDir, "allowed.json"), this.root, settings.layers);
-    this.problems = [...settings.problems, ...this.approvals.problems];
+    // A project's settings file comes with the code. Until the user says the project is
+    // trusted, its hooks and its allow rules are left out: both would run commands unasked.
+    // Its ask and deny rules only restrict, so they always apply.
+    this.trustFile = join(this.stateDir, "trusted");
+    const fromProject = settings.layers.filter((l) => l.source === "project");
+    this.needsTrust = fromProject.some((l) => loadHooks([l]).length > 0 || (l.settings.permissions?.allow?.length ?? 0) > 0);
+    this.trusted = opts.trustProject === true || existsSync(this.trustFile) || !this.needsTrust;
+    this.layers = settings.layers.map((l) => (l.source === "project" && !this.trusted ? { ...l, settings: { ...l.settings, hooks: undefined, permissions: { ...l.settings.permissions, allow: [] } } } : l));
+    this.hooks = loadHooks(this.layers);
+    if (!this.trusted && !opts.canAsk) this.untrustedNote = "This project's .heyho/settings.json has hooks or allow rules. They are off because the project has not been trusted; pass --trust-project to use them.";
+    this.approvals = new Approvals(opts.mode, join(this.stateDir, "allowed.json"), this.root, this.layers);
+    this.problems = [...settings.problems, ...this.approvals.problems, ...(this.untrustedNote ? [this.untrustedNote] : [])];
     for (const [action, list] of [["allow", opts.allow], ["deny", opts.deny]] as const)
       for (const rule of list ?? []) if (!this.approvals.addRule(action, rule)) throw new Error(`"${rule}" is not a rule. Examples: bash(npm test *), edit(src/**), read(.env)`);
     if (opts.tools) {
@@ -157,6 +196,8 @@ export class App {
     if (this.resumed) this.restore(loadSession(this.resumed.file));
     else this.open([this.firstMessage()], true);
     if (this.opts.sessionName) this.rename(this.opts.sessionName);
+    const started = this.hook("SessionStart", { resumed: Boolean(this.resumed) });
+    if (started.output) this.startNote = `[Added by a hook at the start: ${started.output}]\n\n`;
   }
 
   // Opens a new session file that carries on an earlier one: its conversation, the points
@@ -256,25 +297,38 @@ export class App {
   }
 
   async run(text: string): Promise<{ result: Outcome; info: RunInfo }> {
-    const withPaths = text.replace(/(^|\s)@(\S+)/g, (all, lead, p) => (existsSync(join(this.root, p)) ? lead + p : all));
+    const submitted = this.hook("UserPromptSubmit", { prompt: text });
+    if (submitted.blocked !== null) {
+      const info: RunInfo = { model: this.profile.model, contextSize: this.contextSize, wallMs: 0, steps: 0, lastPrompt: 0, lastCompletion: 0, changes: [] };
+      return { result: { status: "error", reason: `A hook refused this message: ${submitted.blocked}` }, info };
+    }
+    const withPaths = text.replace(/(^|\s)@(\S+)/g, (all, lead, p) => (existsSync(join(this.root, p)) ? lead + p : all)) + (submitted.output ? `\n\n[Added by a hook: ${submitted.output}]` : "");
     const plan = this.mode === "plan";
     this.checkpoints.push({ text, messages: this.messages.length, turn: this.changes.turnCount });
     this.saveCheckpoints();
-    this.push({ role: "user", content: (plan && !this.toldPlan ? PLAN_ON : !plan && this.toldPlan ? PLAN_OFF : "") + this.note + withPaths });
+    this.push({ role: "user", content: (plan && !this.toldPlan ? PLAN_ON : !plan && this.toldPlan ? PLAN_OFF : "") + this.startNote + this.note + withPaths });
     this.toldPlan = plan;
     this.note = "";
+    this.startNote = "";
     this.changes.startTurn();
     this.runStart = Date.now();
     const abort = (this.running = new AbortController());
     this.ctx.signal = abort.signal;
     const agent = () =>
-      runAgent({ profile: this.profile, messages: this.messages, tools: this.tools, ctx: this.ctx, maxSteps: this.opts.maxSteps, contextSize: this.contextSize, stats: this.stats, onEvent: this.front.onEvent, record: (e) => this.session.record(e), signal: abort.signal });
+      runAgent({ profile: this.profile, messages: this.messages, tools: this.tools, ctx: this.ctx, maxSteps: this.opts.maxSteps, contextSize: this.contextSize, stats: this.stats, onEvent: this.front.onEvent, record: (e) => this.session.record(e), signal: abort.signal, hooks: this.toolHooks });
     let result: Outcome;
     try {
       result = await agent();
       if (result.status === "context_full") {
         await this.shorten(abort.signal);
         this.push({ role: "user", content: CARRY_ON });
+        result = await agent();
+      }
+      // A Stop hook can send the model back to work, a few times at most.
+      for (let n = 0; n < STOP_HOOK_MAX && result.status === "done"; n++) {
+        const stop = this.hook("Stop", { reply: this.lastReply() });
+        if (stop.blocked === null) break;
+        this.push({ role: "user", content: `[A hook did not accept stopping: ${stop.blocked}]` });
         result = await agent();
       }
     } catch (e) {
@@ -287,6 +341,11 @@ export class App {
     const info: RunInfo = { model: this.profile.model, contextSize: this.contextSize, wallMs: Date.now() - this.runStart, steps: this.stats.steps, lastPrompt: last?.prompt ?? 0, lastCompletion: last?.completion ?? 0, tps: last?.genTps, changes: this.changes.summary() };
     return { result, info };
   }
+
+  private toolHooks = {
+    before: (tool: string, args: Record<string, unknown>) => this.hook("PreToolUse", { tool, args }).blocked,
+    after: (tool: string, args: Record<string, unknown>, result: { ok: boolean; text: string }) => this.hook("PostToolUse", { tool, args, ok: result.ok, result: result.text.slice(0, 4000) }).blocked,
+  };
 
   get runningFor() {
     return this.running ? Date.now() - this.runStart : 0;
