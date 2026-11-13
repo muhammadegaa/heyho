@@ -211,7 +211,7 @@ export class Store {
     const parts: string[] = [];
     if (info.changes.length)
       parts.push(`${p.dim(`changed ${info.changes.length} file${info.changes.length > 1 ? "s" : ""}:`)} ${info.changes.map((c) => `${c.path} ${p.green(`+${c.added}`)}${c.removed ? p.red(` −${c.removed}`) : ""}`).join(p.dim(", "))}`);
-    parts.push(p.dim([`worked for ${secs(info.wallMs)}`, `${info.steps} step${info.steps === 1 ? "" : "s"}`, info.tps ? `${info.tps.toFixed(0)} tok/s` : ""].filter(Boolean).join(" · ")));
+    parts.push(p.dim([`worked for ${secs(info.wallMs)}`, info.steps ? `${info.steps} step${info.steps === 1 ? "" : "s"}` : "", info.tps ? `${info.tps.toFixed(0)} tok/s` : ""].filter(Boolean).join(" · ")));
     this.add(" ", parts.join("\n"), true);
   }
 

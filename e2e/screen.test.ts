@@ -19,7 +19,7 @@ test("start: header, input box between two rules, footer with mode and model", a
   expect(screen).toMatch(/heyho v\d/);
   expect(rules(screen)).toBe(2);
   expect(screen).toMatch(/⏸ ask.*shift\+tab changes/);
-  expect(screen).toMatch(/qwen3-coder · 0% context/);
+  expect(screen).toMatch(/qwen3-coder · \d+% context/);
 });
 
 test("resize: narrower then wider leaves one header, two rules and a one-line footer", async () => {
@@ -274,6 +274,27 @@ test("Esc stops a reply in progress and keeps what was written", async () => {
   const screen = await s.wait(/\[interrupted\]/);
   expect(screen).toMatch(/This is a slow/);
   expect(screen).toMatch(/describe a task/);
+});
+
+test("a reply stopped before it finishes reports no steps or speed from the turn before", async () => {
+  s = await open({ steps: [reply("First done."), { text: "This is a slow reply that will be cut off before it finishes.\nMore.\n", slow: true }] });
+  await s.send("go");
+  await s.wait(/1 step/);
+  await s.send("again");
+  await s.wait(/This is a slow/);
+  await s.key("Escape");
+  const screen = await s.wait(/\[interrupted\][\s\S]*worked for/);
+  expect(screen.split("[interrupted]")[1]).not.toMatch(/step|tok\/s/);
+});
+
+test("the context figure in the footer drops as soon as the conversation is cleared", async () => {
+  s = await open({ steps: [reply("Done.")] });
+  await s.send("go");
+  const before = Number((await s.wait(/Done\.[\s\S]*?(\d+)% context/)).match(/(\d+)% context/)![1]);
+  await s.send("/clear");
+  const after = Number((await s.wait(/New conversation[\s\S]*?(\d+)% context/)).match(/(\d+)% context/)![1]);
+  expect(before).toBeGreaterThan(5);
+  expect(after).toBeLessThan(before);
 });
 
 // ---- undo, rewind, sessions ----

@@ -48,20 +48,26 @@ export type SessionInfo = { file: string; when: Date; first: string; turns: numb
 
 // What the user typed in a session, in order: every user message in the file, including ones
 // later dropped by /compact, minus the messages heyho writes itself.
-function prompts(file: string): { texts: string[]; headless: boolean; name?: string } {
+// `title` is the first message of the conversation, which a reopened session carries in its
+// rewind points even after /compact dropped the message itself. `from` is the file it reopened.
+function prompts(file: string): { texts: string[]; headless: boolean; name?: string; title?: string; from?: string } {
   const texts: string[] = [];
   let headless = false;
   let name: string | undefined;
+  let title: string | undefined;
+  let from: string | undefined;
   for (const line of readFileSync(file, "utf8").split("\n")) {
     if (!line) continue;
     const entry = JSON.parse(line);
     if (entry.meta?.headless) headless = true;
     if (typeof entry.name === "string") name = entry.name;
+    if (typeof entry.from === "string") from = entry.from;
+    if (entry.checkpoints?.length) title ??= entry.checkpoints[0].text;
     if (entry.role !== "user" || typeof entry.content !== "string") continue;
     if (entry.content.startsWith(NOTES_PREFIX) || entry.content === CARRY_ON) continue;
     if (!texts.includes(entry.content)) texts.push(entry.content); // a resumed session repeats its history
   }
-  return { texts, headless, name };
+  return { texts, headless, name, title, from };
 }
 
 // Newest first. Sessions with no user message are left out, and so are one-off headless
@@ -70,12 +76,16 @@ export function listSessions(stateDir: string, limit = 10, opts: { headless?: bo
   const dir = join(stateDir, "sessions");
   if (!existsSync(dir)) return [];
   const out: SessionInfo[] = [];
+  const reopened = new Set<string>(); // files a newer session carries on from
   for (const name of readdirSync(dir).filter((n) => n.endsWith(".jsonl")).sort().reverse()) {
     const file = join(dir, name);
-    const { texts, headless, name: given } = prompts(file);
+    const { texts, headless, name: given, title, from } = prompts(file);
+    if (title && !texts.length) texts.push(title);
     if (!texts.length || (headless && !opts.headless)) continue;
+    if (from) reopened.add(from);
+    if (reopened.has(name)) continue;
     const stamp = name.slice(0, -6).replace(/T(\d\d)-(\d\d)-(\d\d)-(\d+)Z$/, "T$1:$2:$3.$4Z");
-    out.push({ file, when: new Date(stamp), first: given ?? texts[0].replace(/^\[[^\]]*\]\s*/, "").split("\n")[0].slice(0, 70), turns: texts.length });
+    out.push({ file, when: new Date(stamp), first: given ?? (title ?? texts[0]).replace(/^\[[^\]]*\]\s*/, "").split("\n")[0].slice(0, 70), turns: texts.length });
     if (out.length >= limit) break;
   }
   return out;

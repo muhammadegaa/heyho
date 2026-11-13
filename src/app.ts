@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Approvals, CYCLE, MODES, PLAN_REFUSAL, type Kind, type Mode } from "./approve.ts";
 import { HOOK_EVENTS, loadHooks, runHooks, type Hook, type HookEvent } from "./hooks.ts";
 import { mcpPrompt, McpServer, mcpTool, serverConfigs } from "./mcp.ts";
@@ -251,7 +251,7 @@ export class App {
     this.resumed = wanted ? earlier.find((s) => s.first.toLowerCase().includes(wanted)) : this.opts.resume ? earlier[0] : undefined;
     if (wanted && !this.resumed) throw new Error(`No session in this directory matches "${this.opts.resumeName}".`);
     if (this.opts.resume && !this.resumed) throw new Error("There is no earlier session in this directory to continue.");
-    if (this.resumed) this.restore(loadSession(this.resumed.file));
+    if (this.resumed) this.restore(loadSession(this.resumed.file), this.resumed.file);
     else this.open([this.firstMessage()], true);
     if (this.opts.sessionName) this.rename(this.opts.sessionName);
     const started = this.hook("SessionStart", { resumed: Boolean(this.resumed) });
@@ -260,8 +260,9 @@ export class App {
 
   // Opens a new session file that carries on an earlier one: its conversation, the points
   // it can be rewound to, the file changes behind them, its name and its mode.
-  private restore(old: Loaded) {
+  private restore(old: Loaded, file: string) {
     this.open(old.messages, true);
+    this.session.record({ from: basename(file) });
     this.ctx.seen.clear();
     this.checkpoints.length = 0;
     this.checkpoints.push(...old.checkpoints);
@@ -306,7 +307,11 @@ export class App {
     return this.mode;
   }
 
+  // The server's count from the last model call. After the conversation is replaced (start,
+  // /clear, /compact, /rewind, /resume) there is no call to go by yet, so estimate from its length.
+  private callsAtOpen = 0;
   get contextUsed() {
+    if (this.stats.turns.length === this.callsAtOpen) return Math.round(this.messages.reduce((n, m) => n + JSON.stringify(m).length, 0) / 4);
     const last = this.stats.turns.at(-1);
     return (last?.prompt ?? 0) + (last?.completion ?? 0);
   }
@@ -338,6 +343,7 @@ export class App {
     this.messages.length = 0;
     this.messages.push(...next);
     for (const m of next) this.session.record(m);
+    this.callsAtOpen = this.stats.turns.length;
   }
 
   private push(m: Message) {
@@ -371,6 +377,7 @@ export class App {
     this.startNote = "";
     this.changes.startTurn();
     this.runStart = Date.now();
+    this.stats.steps = 0; // counted per run; a run stopped before its first reply has none
     const abort = (this.running = new AbortController());
     this.ctx.signal = abort.signal;
     const agent = () =>
@@ -397,7 +404,7 @@ export class App {
       this.running = null;
     }
     const last = this.stats.turns.at(-1);
-    const info: RunInfo = { model: this.profile.model, contextSize: this.contextSize, wallMs: Date.now() - this.runStart, steps: this.stats.steps, lastPrompt: last?.prompt ?? 0, lastCompletion: last?.completion ?? 0, tps: last?.genTps, changes: this.changes.summary() };
+    const info: RunInfo = { model: this.profile.model, contextSize: this.contextSize, wallMs: Date.now() - this.runStart, steps: this.stats.steps, lastPrompt: last?.prompt ?? 0, lastCompletion: last?.completion ?? 0, tps: this.stats.steps ? last?.genTps : undefined, changes: this.changes.summary() };
     return { result, info };
   }
 
@@ -467,7 +474,7 @@ export class App {
     return listSessions(this.stateDir).filter((s) => s.file !== this.session.file);
   }
   resume(info: SessionInfo) {
-    this.restore(loadSession(info.file));
+    this.restore(loadSession(info.file), info.file);
   }
 
   private tellUndone(restored: string[]) {

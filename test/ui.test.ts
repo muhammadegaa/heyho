@@ -206,3 +206,20 @@ test("a session reloads its messages, starting after the last reset", async () =
   expect(listSessions(dir).map((x) => x.first)).toEqual(["first task"]);
   expect(listSessions(dir, 10, { headless: true }).map((x) => x.first)).toContain("one-off question");
 });
+
+test("a session reopened after shortening keeps its title and replaces the one it came from", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "heyho-state-"));
+  const old = newSession(dir);
+  old.record({ role: "user", content: "first task" });
+  old.record({ reset: true });
+  old.record({ role: "user", content: "Earlier messages in this session were removed to free context. Your notes from before:\n\nx" });
+  await new Promise((r) => setTimeout(r, 5));
+  const fork = newSession(dir);
+  fork.record({ from: old.file.split("/").pop() });
+  fork.record({ role: "user", content: "Earlier messages in this session were removed to free context. Your notes from before:\n\nx" });
+  fork.record({ checkpoints: [{ text: "first task", messages: 1, turn: 0 }] });
+  // Reopened and closed without a message: still one entry, under the original title.
+  expect(listSessions(dir).map((x) => [x.first, x.file])).toEqual([["first task", fork.file]]);
+  fork.record({ role: "user", content: "next thing" });
+  expect(listSessions(dir).map((x) => [x.first, x.file])).toEqual([["first task", fork.file]]);
+});

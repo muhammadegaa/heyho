@@ -155,7 +155,8 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   const [edit, setEdit] = useState<ed.Edit>(ed.EMPTY);
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuOff, setMenuOff] = useState(false); // closed with Esc until the text changes
-  const [overlay, setOverlayRaw] = useState<Overlay | null>(null);
+  // The trust question is up from the first frame, so the input box never shows before it.
+  const [overlay, setOverlayRaw] = useState<Overlay | null>(app.needsTrust && !app.trusted ? { type: "trust", choices: [{ label: "Yes, I trust this project: use them", value: true }, { label: "No: leave them off", value: false }] } : null);
   const [filter, setFilter] = useState(""); // typed into a picker that can be searched
   const setOverlay = (o: Overlay | null) => (setFilter(""), setOverlayRaw(o));
   const stash = useRef<string | null>(null);
@@ -225,9 +226,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
     setOverlay({ type: "resume", choices: list.map((s) => ({ label: s.first, hint: `${s.when.toLocaleString()} · ${s.turns} message${s.turns > 1 ? "s" : ""}`, value: s })) });
   };
   useEffect(() => {
-    if (app.needsTrust && !app.trusted)
-      setOverlay({ type: "trust", choices: [{ label: "Yes, I trust this project: use them", value: true }, { label: "No: leave them off", value: false }] });
-    else if (pickSession) openResume();
+    if (pickSession && !(app.needsTrust && !app.trusted)) openResume();
   }, []);
   useEffect(() => {
     if (pending && app.runningFor > BELL_AFTER_MS) process.stderr.write("\x07");
