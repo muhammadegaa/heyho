@@ -54,7 +54,8 @@ export const bash: Tool = {
     required: ["command"],
   },
   async run(args, ctx) {
-    const command = String(args.command);
+    // With background set, a trailing "&" would let bash exit at once and leave the program untracked.
+    const command = args.background === true ? String(args.command).replace(/\s*&\s*$/, "") : String(args.command);
     const timeout = Math.min(600, Math.max(1, Number(args.timeout) || 120));
     const no = await declined(ctx, "bash", command);
     if (no) return no;

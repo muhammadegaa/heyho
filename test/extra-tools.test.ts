@@ -37,6 +37,14 @@ test("a background command returns at once, logs to a file, and can be stopped b
   expect(job.exit).not.toBeUndefined();
 });
 
+test("a background command written with a trailing & is still tracked while it runs", async () => {
+  const c = ctx();
+  await bash.run({ command: "sleep 30 &", background: true }, c);
+  await wait(400);
+  expect(c.jobs[0].exit).toBeUndefined();
+  process.kill(-c.jobs[0].pid, "SIGKILL");
+});
+
 test("a background command that ends records its exit code", async () => {
   const c = ctx();
   await bash.run({ command: "exit 4", background: true }, c);
@@ -53,6 +61,9 @@ test("the checklist is passed on whole, with unknown statuses treated as pending
   await todo.run({ items: ["[x] read the code", "[~] fix it", "[ ] run tests", "no mark"] }, c);
   expect(seen.map((i) => i.status)).toEqual(["done", "doing", "pending", "pending"]);
   expect(seen[3].text).toBe("no mark");
+  // Qwen3.6 was seen dropping the brackets: "x Add the code".
+  await todo.run({ items: ["x read the code", "~ fix it", "- [x] run tests", "xylophone"] }, c);
+  expect(seen).toEqual([{ text: "read the code", status: "done" }, { text: "fix it", status: "doing" }, { text: "run tests", status: "done" }, { text: "xylophone", status: "pending" }]);
   expect((await todo.run({ items: "no" }, c)).ok).toBe(false);
 });
 

@@ -19,9 +19,10 @@ export const todo: Tool = {
           const o = raw as { text?: unknown; status?: unknown };
           return { text: String(o.text ?? "").trim(), status: o.status === "done" || o.status === "doing" ? o.status : "pending" };
         }
-        const m = String(raw).match(/^\s*\[(.?)\]\s*(.*)$/s);
-        const mark = m?.[1].toLowerCase();
-        return { text: (m ? m[2] : String(raw)).trim(), status: mark === "x" ? "done" : mark === "~" ? "doing" : "pending" };
+        // The mark, with or without its brackets or a leading dash: models drop either.
+        const m = String(raw).match(/^\s*(?:-\s+)?(?:\[(.?)\]|([xX~])(?=\s))\s*(.*)$/s);
+        const mark = (m?.[1] ?? m?.[2])?.toLowerCase();
+        return { text: (m ? m[3] : String(raw)).trim(), status: mark === "x" ? "done" : mark === "~" ? "doing" : "pending" };
       })
       .filter((i) => i.text);
     ctx.onTodos?.(items);
