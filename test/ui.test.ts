@@ -73,6 +73,12 @@ test("a compound command is judged part by part, and anything that can't be take
   expect(splitCommand("grep -rn '\\bsecs\\b' src/")).toEqual(["grep -rn '\\bsecs\\b' src/"]);
   expect(splitCommand("grep '<div>' a.html | head -3")?.length).toBe(2);
   expect(splitCommand("grep 'x' > out.txt")).toBeNull();
+  // Sending errors to the output or to nowhere writes no file, so it does not make a command opaque.
+  expect(splitCommand("ls test/ 2>/dev/null | head -3")).toEqual(["ls test/", "head -3"]);
+  expect(splitCommand("npm test 2>&1")).toEqual(["npm test"]);
+  expect(splitCommand("ls 2>/tmp/x")).toBeNull();
+  expect(splitCommand("ls 2>/dev/nullx")).toBeNull();
+  expect(splitCommand("ls >/dev/null; rm 2>&1 > f")).toBeNull();
   expect(splitCommand(`echo "it's $(whoami)'s"`)).toBeNull();
   expect(splitCommand(`echo "a\\'" 'b'`)).toBeNull();
   const a = new Approvals("ask", undefined, "/work/repo");

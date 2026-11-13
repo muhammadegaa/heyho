@@ -27,6 +27,8 @@ export const todo: Tool = {
       .filter((i) => i.text);
     ctx.onTodos?.(items);
     const left = items.filter((i) => i.status !== "done").length;
-    return ok(left ? `Checklist saved: ${items.length - left} of ${items.length} done.` : `Checklist saved: all ${items.length} done.`);
+    // Qwen3.6 was seen sending the same unmarked list after every step, so nothing was ever ticked.
+    const unmarked = items.every((i) => i.status === "pending");
+    return ok(left ? `Checklist saved: ${items.length - left} of ${items.length} done.${unmarked ? ' When an item is finished, send the list again with that item starting "[x] ".' : ""}` : `Checklist saved: all ${items.length} done.`);
   },
 };

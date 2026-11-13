@@ -202,6 +202,15 @@ test("step limit ends with a text-only wrap-up turn", async () => {
   expect((messages.at(-1) as { content: string }).content).toBe("Summary: read a.txt.");
 });
 
+test("a wrap-up that is another tool call written as text is replaced by a plain note", async () => {
+  const { run, messages } = setup();
+  script = [{ calls: [["read", '{"path":"a.txt"}']] }, { text: "<tool_call>\n<function=bash>\n<parameter=command>\nls\n</parameter>\n</function>\n</tool_call>" }];
+  expect((await run(1)).status).toBe("step_limit");
+  const last = (messages.at(-1) as { content: string }).content;
+  expect(last).not.toContain("<function");
+  expect(last).toMatch(/tried to call another tool/);
+});
+
 test("aliased tool names and keys are accepted; unknown tools get an error", async () => {
   const { run, messages } = setup();
   script = [{ calls: [["read_file", '{"file_path":"a.txt"}'], ["teleport", "{}"]] }, { text: "done" }];

@@ -137,9 +137,13 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
 
   push({ role: "user", content: "You have reached the step limit. Do not call any tools. Reply with what you changed, what is left to do, and the current state." });
   o.onEvent({ type: "request", step: o.maxSteps + 1 });
-  const wrap = await chat(o.profile, o.messages, schemas, { toolChoice: "none", ...streamEvents(o), signal: o.signal });
+  // Not streamed: some models answer with another tool call written as text, which is cut out here.
+  const wrap = await chat(o.profile, o.messages, schemas, { toolChoice: "none", ...streamEvents(o), onText: undefined, signal: o.signal });
   o.stats.turns.push(wrap.usage);
-  push({ role: "assistant", content: wrap.message.content });
+  const tried = textToolCalls(wrap.message.content);
+  const summary = (tried ? tried.rest : wrap.message.content ?? "").trim() || "No summary: at the step limit the model tried to call another tool instead of saying what is left.";
+  o.onEvent({ type: "text", text: summary });
+  push({ role: "assistant", content: summary });
   return { status: "step_limit" };
 }
 

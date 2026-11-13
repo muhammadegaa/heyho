@@ -79,12 +79,15 @@ function unquoted(command: string): string {
   }
   return out;
 }
+// "2>&1" and "2>/dev/null" write no file; models add them to most commands.
+const HARMLESS = /\s*\b2>(&1|\/dev\/null)(?=\s|$|[;|&)])/g;
 const opaque = (command: string) => OPAQUE.test(unquoted(command));
-export const isSimple = (command: string) => !opaque(command) && splitCommand(command)?.length === 1;
+export const isSimple = (command: string) => !opaque(command.replace(HARMLESS, "")) && splitCommand(command)?.length === 1;
 
 // Splits "a && b | c; d" into its commands. null when the command can't be taken apart
 // safely (substitution, redirection, a background job, unbalanced quotes).
 export function splitCommand(command: string): string[] | null {
+  command = command.replace(HARMLESS, "");
   if (opaque(command)) return null;
   const parts: string[] = [];
   let current = "";

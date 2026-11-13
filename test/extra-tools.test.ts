@@ -58,6 +58,7 @@ test("the checklist is passed on whole, with unknown statuses treated as pending
   const r = await todo.run({ items: [{ text: "read the code", status: "done" }, { text: "fix it", status: "doing" }, { text: "run tests", status: "later" }, { text: "  " }] }, c);
   expect(seen).toEqual([{ text: "read the code", status: "done" }, { text: "fix it", status: "doing" }, { text: "run tests", status: "pending" }]);
   expect(r.text).toBe("Checklist saved: 1 of 3 done.");
+  expect((await todo.run({ items: ["read the code", "fix it"] }, c)).text).toMatch(/0 of 2 done\. When an item is finished.*"\[x\] "/);
   await todo.run({ items: ["[x] read the code", "[~] fix it", "[ ] run tests", "no mark"] }, c);
   expect(seen.map((i) => i.status)).toEqual(["done", "doing", "pending", "pending"]);
   expect(seen[3].text).toBe("no mark");

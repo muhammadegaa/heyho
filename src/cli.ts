@@ -26,7 +26,7 @@ Options
   --resume [name]       reopen a session by name, or choose from a list
   --yolo                with a task: no approval prompts; bash runs in the macOS sandbox
   --no-net              with --yolo, the sandbox also blocks network access
-  --max-steps <n>       step limit (default 40); --max-turns is the same
+  --max-steps <n>       step limit per turn (default 40 with a task, 100 in a session); --max-turns is the same
   --output-format <text|json|stream-json>
                         with a task: the reply (default), one JSON result, or a JSON event per line
   --json                the same as --output-format json
@@ -105,7 +105,8 @@ async function main() {
     model: opt.model,
     mode: opt.yolo ? "yolo" : (mode as Mode),
     noNet: opt["no-net"]!,
-    maxSteps: Number(opt["max-steps"] ?? opt["max-turns"] ?? settings.maxSteps) || 40,
+    // A session can be told to continue, but a four-file change was seen running past 40 steps.
+    maxSteps: Number(opt["max-steps"] ?? opt["max-turns"] ?? settings.maxSteps) || (headless ? 40 : 100),
     cwd,
     headless,
     canAsk: Boolean(process.stdin.isTTY),
