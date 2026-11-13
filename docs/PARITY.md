@@ -87,6 +87,47 @@ The four new tools stay. They fit the 1,500-token budget for the fixed prompt (1
 
 Limits of this evidence: the tests run in tmux only, so other terminal programs are not covered; and nothing here measures how well a local model uses these features.
 
+## Second run on the real model (2026-11-13)
+
+The 24 steps of section 1 were sent again to heyho (main at 06bac8e, Qwen3.6, tmux 120×45, a fresh copy of the same repo). Claude Code was not run again: its side is the captures of 2026-11-12, same version (2.1.323). Captures are kept outside the repo.
+
+| # | Step | heyho now | Against Claude Code |
+|---|---|---|---|
+| 1 | Start | Header, input box between two rules, footer with mode, model and context | same, except heyho asks about trust only when the project sets hooks, allow rules or MCP servers |
+| 2 | Ask what a function does | Status line with stage, time and tokens; answer wrapped at word boundaries; "worked for 8.9 s · 3 steps · 43 tok/s" | same in effect; each tool call is still its own line, not collapsed |
+| 3 | One-line edit | Panel with the diff, line numbers, three lines of context and a numbered menu | same |
+| 4 | Decline with a correction | Tab opens "What should it do instead?"; the model retried with the correction | same |
+| 5 | After the edit | Applied diff stays in the transcript, with a summary of changed files | same, without a suggested next prompt |
+| 6 | Run `npm test` | Panel with the command and "don't ask again in this project for: npm test …" | same |
+| 7 | Command result | Exit code, time, "12 lines of output (ctrl+o shows them)" | same |
+| 8 | Shift+Tab | ask → auto → plan → ask in the footer | same for the three modes heyho has in the cycle |
+| 9 | Plan mode | Explores, prints the plan, then asks: carry out without asking / carry out asking / keep planning | same in effect; the plan is not saved to a file |
+| 10 | Approve the plan | Carried out in auto mode | no automatic session name; `/rename` sets one |
+| 11 | Type while it works | Input box stays usable; "queued: …" shown; sent when the turn ends | same |
+| 12 | Esc during a long answer | Stops, keeps the text, says how to undo | same |
+| 13 | `/` | Menu with descriptions that narrows as you type | same |
+| 14 | `@src/` | Live list of matching files | same |
+| 15 | `!git status --short` | Runs and shows the output | same in effect |
+| 16 | `/context` | A bar, tokens used, message and call counts, tool counts | partial: no breakdown by category |
+| 17 | `/rewind` | Lists every message; restores files, conversation or both; puts the message back in the input | same, without "summarise from here" |
+| 18 | `/compact` | Works, with a status line while it runs | same |
+| 19 | `/clear`, `/resume` | Searchable list with first message, date and message count | partial: no branch, size or preview; `/clear` leaves the old transcript on screen |
+| 20 | `/help` | Every command with a description, then the keys | same content, one page, no tabs |
+| 21 | `--continue` | Reopens the last session and names it | same |
+| 22 | New file | Written in auto mode, shown with numbered lines | same (the approval panel is covered by the tests, not this run) |
+| 23 | Command that exits 3 | "exit code 3" with the output | same |
+| 24 | Headless JSON | status, reply, steps, time, changes, session file | not compared, as before |
+
+Defects this run found, all fixed and tested (06bac8e and the commit after it):
+
+- A session reopened after `/compact` was listed under the next thing typed, and the session it came from stayed in the list as a duplicate. `test/ui.test.ts` "a session reopened after shortening keeps its title and replaces the one it came from".
+- The context figure in the footer kept its old value after `/clear` and `/compact`. `e2e/screen.test.ts` "the context figure in the footer drops as soon as the conversation is cleared".
+- A reply stopped before it finished reported the previous turn's step count and speed. `e2e/screen.test.ts` "a reply stopped before it finishes reports no steps or speed from the turn before".
+- The trust question appeared one frame after the input box.
+- "Don't ask again" offered a rule for every use of `sh`, which would allow any command. Shells and wrappers now get only the exact-command option. `test/ui.test.ts`, in the approvals test.
+
+Not exercised on the real model in this run: hooks, MCP, skills, subagents, the question tool, web fetch and background commands. Those are covered by the scripted tests only.
+
 ## 1. What was run, step by step
 
 | # | Step sent to both | Claude Code | heyho | Status |

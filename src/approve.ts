@@ -105,6 +105,8 @@ const findWrites = (command: string) => /^find\b/.test(command) && /\s-(delete|e
 const startsWith = (command: string, prefix: string) => command === prefix || command.startsWith(prefix + " ");
 
 // "npm test -- x" → "npm test"; "ls -la" → "ls". The second word is kept when it looks like a subcommand.
+// Programs that run whatever command they are given: "sh *" as a rule would allow anything.
+const WRAPPERS = /^(sh|bash|zsh|dash|fish|env|sudo|xargs|eval|exec|nohup|time)\b/;
 function prefixOfOne(c: string): string {
   const [first, second] = c.split(/\s+/);
   return second && /^[a-z][\w:-]*$/.test(second) ? `${first} ${second}` : first;
@@ -233,6 +235,7 @@ export class Approvals {
     const parts = splitCommand(command.trim());
     if (!parts) return null;
     const need = parts.filter((c) => !this.builtIn(c) && !this.find("allow", "bash", (p) => commandMatches(p, c)));
+    if (need.some((c) => WRAPPERS.test(c))) return null;
     return [...new Set(need.map(prefixOfOne))];
   }
 

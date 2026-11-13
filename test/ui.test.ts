@@ -78,6 +78,9 @@ test("a compound command is judged part by part, and anything that can't be take
   expect(a.allowed("bash", "npm test && rm -rf .")).toBe(false);
   expect(a.allowed("bash", "npm test > log")).toBe(false);
   expect(a.suggest("npm test > log")).toBeNull();
+  // A rule for every use of a shell or a wrapper would allow any command at all.
+  expect(a.suggest('sh -c "echo hi"')).toBeNull();
+  expect(a.suggest("npm test && sudo make install")).toBeNull();
 });
 
 test("auto mode stops asking for edits and for file commands inside the workspace", () => {
