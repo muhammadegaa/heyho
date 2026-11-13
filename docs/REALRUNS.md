@@ -168,7 +168,7 @@ Where pass 2 was faster than pass 1, the cause was fewer approval prompts and no
 
 - Scenario 44: asked for the first word of "reply with only the first word of this sentence", the model said "this".
 
-## Questions for Ega
+## Open questions on permission defaults
 
 - Scenario 13: "don't ask again" offers a rule for every `node` command. `node -e` runs any code, the same reason `sh` was taken off that list. `python`, `ruby`, `perl`, `bun` and `deno` are the same. Taking them off changes a permission default, so it waits for a decision.
 - Scenario 19: `echo` is not on the list of commands that never ask, so `ls x || echo "none"` still asks. Adding it changes a permission default.
