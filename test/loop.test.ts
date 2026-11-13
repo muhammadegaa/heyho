@@ -125,6 +125,12 @@ test("shortening keeps the system prompt and the model's notes", async () => {
   expect(after.length).toBe(2);
   expect(after[0]).toEqual(before[0]);
   expect((after[1] as { content: string }).content).toContain("Notes: changed a.txt.");
+  // The user's request is carried over in their own words, whatever the notes say.
+  expect((after[1] as { content: string }).content).toMatch(/What the user asked for, in order:\n- task\n\nYour notes from before:/);
+  // And it survives a second shortening, when the first request exists only inside the earlier notes.
+  script = [{ text: "Notes: did the second thing too." }];
+  const again = await compact(profile, [...after, { role: "user", content: "second thing" }, { role: "assistant", content: "done" }], toolSchemas(TOOLS));
+  expect((again[1] as { content: string }).content).toMatch(/in order:\n- task\n- second thing\n\nYour notes from before:\n\nNotes: did the second thing too\./);
   expect(requests[0].tool_choice).toBe("none");
   expect((requests[0] as { chat_template_kwargs?: object }).chat_template_kwargs).toEqual({ enable_thinking: false });
   expect(JSON.stringify(requests[0].messages.slice(0, 3))).toBe(JSON.stringify(before));

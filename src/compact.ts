@@ -36,15 +36,28 @@ export async function compact(profile: Profile, messages: Message[], schemas: To
   if (summary.length < 20 && textToolCalls(reply.message.content)) {
     const again = await chat(profile, [{ role: "system", content: "You write short plain-text notes. You have no tools." }, { role: "user", content: `${transcriptTail(messages)}\n\n${ASK}` }], [], { ...opts, think: false });
     summary = notes(again);
-    if (summary.length < 20) summary = `(No notes were written.) What the user asked for, in order:\n${asked(messages).map((t) => `- ${t}`).join("\n")}`;
+    if (summary.length < 20) summary = "(No notes were written.)";
   }
   if (!summary) throw new Error("the model returned an empty summary");
-  return [messages[0], { role: "user", content: `${NOTES_PREFIX} Your notes from before:\n\n${summary}` }];
+  // The user's own words are kept whatever the model wrote: its notes have been seen to be
+  // one line naming the next step, with the task itself left out.
+  const requests = asked(messages).slice(-6).map((t) => `- ${t}`).join("\n");
+  return [messages[0], { role: "user", content: `${NOTES_PREFIX}${requests ? `\n\nWhat the user asked for, in order:\n${requests}` : ""}\n\nYour notes from before:\n\n${summary}` }];
 }
 
-// What the user typed, leaving out the messages heyho writes itself.
-const asked = (messages: Message[]) =>
-  messages.filter((m) => m.role === "user" && typeof m.content === "string" && !m.content.startsWith(NOTES_PREFIX) && m.content !== CARRY_ON && !m.content.startsWith("[")).map((m) => (m.content as string).slice(0, 600));
+// What the user typed, leaving out the messages heyho writes itself. Requests carried in
+// the notes of an earlier shortening are read back out of them, so they survive the next one.
+function asked(messages: Message[]): string[] {
+  const out: string[] = [];
+  for (const m of messages) {
+    if (m.role !== "user" || typeof m.content !== "string") continue;
+    if (m.content.startsWith(NOTES_PREFIX)) {
+      const kept = m.content.match(/What the user asked for, in order:\n([\s\S]*?)\n\nYour notes from before:/)?.[1];
+      for (const part of kept?.split(/\n(?=- )/) ?? []) out.push(part.replace(/^- /, ""));
+    } else if (m.content !== CARRY_ON && !m.content.startsWith("[")) out.push(m.content.slice(0, 600));
+  }
+  return out;
+}
 
 // The user's requests and the model's own words from the end of the conversation, as plain
 // text short enough to send without the tool schemas.
