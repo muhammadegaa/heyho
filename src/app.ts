@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Approvals, CYCLE, MODES, PLAN_REFUSAL, type Kind, type Mode } from "./approve.ts";
 import { HOOK_EVENTS, loadHooks, runHooks, type Hook, type HookEvent } from "./hooks.ts";
+import { mcpPrompt, McpServer, mcpTool, serverConfigs } from "./mcp.ts";
 import { heyhoHome, loadSettings, type Layer } from "./settings.ts";
 import { Changes } from "./changes.ts";
 import { CARRY_ON, compact } from "./compact.ts";
@@ -114,7 +115,7 @@ export class App {
   }
   private firstMessage(): Message {
     this.folderNotes.clear();
-    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile, { replace: this.opts.systemPrompt, append: this.opts.appendSystemPrompt }) };
+    return { role: "system", content: systemPrompt(this.root, new Date(), this.notesFile, { replace: this.opts.systemPrompt, append: [mcpPrompt(this.servers).trimEnd(), this.opts.appendSystemPrompt].filter(Boolean).join("\n\n") || undefined }) };
   }
   // The instruction files in effect, for /memory.
   instructionFiles() {
@@ -141,17 +142,17 @@ export class App {
     // Its ask and deny rules only restrict, so they always apply.
     this.trustFile = join(this.stateDir, "trusted");
     const fromProject = settings.layers.filter((l) => l.source === "project");
-    this.needsTrust = fromProject.some((l) => loadHooks([l]).length > 0 || (l.settings.permissions?.allow?.length ?? 0) > 0);
+    this.needsTrust = existsSync(join(this.root, ".mcp.json")) || fromProject.some((l) => loadHooks([l]).length > 0 || (l.settings.permissions?.allow?.length ?? 0) > 0 || (l.settings as { mcpServers?: unknown }).mcpServers !== undefined);
     this.trusted = opts.trustProject === true || existsSync(this.trustFile) || !this.needsTrust;
     this.layers = settings.layers.map((l) => (l.source === "project" && !this.trusted ? { ...l, settings: { ...l.settings, hooks: undefined, permissions: { ...l.settings.permissions, allow: [] } } } : l));
     this.hooks = loadHooks(this.layers);
-    if (!this.trusted && !opts.canAsk) this.untrustedNote = "This project's .heyho/settings.json has hooks or allow rules. They are off because the project has not been trusted; pass --trust-project to use them.";
+    if (!this.trusted && !opts.canAsk) this.untrustedNote = "This project sets hooks, allow rules or MCP servers. They are off because the project has not been trusted; pass --trust-project to use them.";
     this.approvals = new Approvals(opts.mode, join(this.stateDir, "allowed.json"), this.root, this.layers);
     this.problems = [...settings.problems, ...this.approvals.problems, ...(this.untrustedNote ? [this.untrustedNote] : [])];
     for (const [action, list] of [["allow", opts.allow], ["deny", opts.deny]] as const)
       for (const rule of list ?? []) if (!this.approvals.addRule(action, rule)) throw new Error(`"${rule}" is not a rule. Examples: bash(npm test *), edit(src/**), read(.env)`);
     if (opts.tools) {
-      const unknown = opts.tools.filter((n) => !TOOLS.some((t) => t.name === n));
+      const unknown = opts.tools.filter((n) => n !== "mcp" && !TOOLS.some((t) => t.name === n));
       if (unknown.length) throw new Error(`Unknown tool${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}. Tools: ${TOOLS.map((t) => t.name).join(", ")}.`);
       this.tools = TOOLS.filter((t) => opts.tools!.includes(t.name));
     }
@@ -185,8 +186,22 @@ export class App {
   }
 
   // Finds the server and its context size, then opens a new session or the last one.
+  servers: McpServer[] = [];
+  private async startServers() {
+    const configs = serverConfigs(this.root, this.layers).filter(([, , source]) => source !== "project" || this.trusted);
+    this.servers = configs.map(([name, config, source]) => new McpServer(name, config, source, this.root));
+    await Promise.all(this.servers.map((s) => s.start()));
+    for (const s of this.servers) if (s.status === "failed") this.front.note(`MCP server "${s.name}" did not start: ${s.error}`, "warn");
+    if (this.servers.some((s) => s.status === "running" && s.tools.length) && (!this.opts.tools || this.opts.tools.includes("mcp"))) this.tools = [...this.tools, mcpTool(this.servers)];
+  }
+  describeServers(): string[] {
+    if (!this.servers.length) return [this.needsTrust && !this.trusted ? "This project sets MCP servers, but it is not trusted, so they are off." : 'No MCP servers are set. They go in .mcp.json at the project root, or under "mcpServers" in a settings file.'];
+    return this.servers.flatMap((s) => [`${s.name}  ${s.status}${s.status === "failed" ? `: ${s.error}` : `  ${s.tools.length} tool${s.tools.length === 1 ? "" : "s"}`}`, ...s.tools.map((t) => `  ${s.name}.${t.name}  ${t.description.split("\n")[0]}`)]);
+  }
+
   async start() {
     await this.connect();
+    await this.startServers();
     // A headless run carries on from headless runs too; an interactive one skips those one-offs.
     const earlier = listSessions(this.stateDir, 50, { headless: this.opts.headless });
     const wanted = this.opts.resumeName?.toLowerCase();
@@ -261,10 +276,11 @@ export class App {
     if (this.mode === "dontask") return "Blocked: this session runs without asking, and this action is not on the allowed list. Carry on without it, or say what you could not do.";
     if (!this.opts.canAsk) return false;
     const suggested = kind === "bash" ? this.approvals.suggest(summary) : null;
-    const prefix = kind === "fetch" ? new URL(summary).hostname : suggested?.length ? suggested.map((p) => `${p} …`).join(", ") : null;
+    const prefix = kind === "mcp" ? summary.split("\n")[0].split(".")[0] : kind === "fetch" ? new URL(summary).hostname : suggested?.length ? suggested.map((p) => `${p} …`).join(", ") : null;
     const answer = await this.front.ask({ kind, summary, change, prefix });
     if (typeof answer === "object") return answer.say;
-    if (kind === "fetch" && (answer === "always" || answer === "prefix")) this.approvals.allowHost(summary);
+    if (kind === "mcp" && (answer === "always" || answer === "prefix")) this.approvals.allowServer(prefix!);
+    else if (kind === "fetch" && (answer === "always" || answer === "prefix")) this.approvals.allowHost(summary);
     else if (answer === "always") kind === "bash" ? this.approvals.allowExact(summary) : this.approvals.allowKind(kind);
     else if (answer === "prefix" && prefix) this.approvals.allowSuggested(summary);
     return answer !== "no";
@@ -374,6 +390,7 @@ export class App {
   // Background commands do not outlive the session.
   shutdown() {
     for (const job of this.ctx.jobs) if (this.jobRunning(job)) this.stopJob(job);
+    for (const s of this.servers) s.stop();
   }
   lastReply(): string | null {
     const m = this.messages.findLast((x) => x.role === "assistant");

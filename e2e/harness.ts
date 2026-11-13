@@ -57,7 +57,7 @@ export async function open(opts: { steps?: Step[]; files?: Record<string, string
     send: async (text: string) => (await s.type(text), await s.key("Enter")),
     close: () => tmux("kill-session", "-t", name),
   };
-  await s.wait(/describe a task|Type a task|Reopen a session|sets hooks or allow rules/);
+  await s.wait(/describe a task|Type a task|Reopen a session|sets hooks, allow rules or MCP servers/);
   return s;
 }
 

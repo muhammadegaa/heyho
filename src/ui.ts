@@ -340,7 +340,7 @@ export class Renderer {
       this.atLineStart = e.text.endsWith("\n");
     } else if (e.type === "tool") {
       this.quiet();
-      const arg = String(e.args.path ?? e.args.command ?? e.args.pattern ?? e.args.glob ?? "").split("\n")[0].slice(0, 100);
+      const arg = String(e.args.path ?? e.args.command ?? e.args.pattern ?? e.args.glob ?? e.args.url ?? e.args.tool ?? "").split("\n")[0].slice(0, 100);
       process.stderr.write(`→ ${e.name} ${arg}  ${e.result.text.split("\n")[0].slice(0, 120)}\n`);
     } else if (e.type === "turn") {
       const u = e.usage;

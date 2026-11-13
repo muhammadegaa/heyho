@@ -38,6 +38,7 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["status", "", "version, model, folder, session"],
   ["tasks", "[stop <n>]", "commands running in the background"],
   ["hooks", "", "your commands that run around tool calls, messages and stops"],
+  ["mcp", "", "MCP servers and the tools they offer"],
   ["mode", "[ask|auto|plan|dontask|yolo]", "show or set the mode"],
   ["permissions", "[allow|ask|deny|remove <rule>] [reset]", "rules for what runs without asking, asks, or is refused"],
   ["init", "", "have the model write AGENTS.md for this project"],
@@ -65,6 +66,7 @@ type Overlay =
   | { type: "plan"; choices: Choice<"auto" | "ask" | "keep">[] };
 
 function approvalChoices(req: ApprovalRequest): Choice<ApprovalAnswer | "say">[] {
+  if (req.kind === "mcp") return [{ label: "Yes", value: "yes" }, { label: `Yes, and don't ask again in this project for the ${req.prefix} server`, value: "prefix" }, { label: "No, and say what to do instead", value: "say" }];
   if (req.kind === "fetch") return [{ label: "Yes", value: "yes" }, { label: `Yes, and don't ask again in this project for pages on ${req.prefix}`, value: "prefix" }, { label: "No, and say what to do instead", value: "say" }];
   const always =
     req.kind !== "bash"
@@ -304,6 +306,8 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       }
       case "status":
         return say(app.status(version).join("\n"));
+      case "mcp":
+        return say(app.describeServers().join("\n"));
       case "hooks":
         return say(app.describeHooks().join("\n"));
       case "tasks": {
@@ -418,7 +422,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
     if (o.type === "history") return setEdit(ed.at(o.choices[i].value));
     if (o.type === "trust") {
       if (o.choices[i].value) app.trust();
-      return store.note(o.choices[i].value ? "Trusted. This project's hooks and allow rules are in use, here and next time." : "Left off. The project's ask and deny rules still apply. You will be asked again next time.", "dim");
+      return store.note(o.choices[i].value ? "Trusted. This project's hooks and allow rules are in use, here and next time. Its MCP servers start with the next session." : "Left off. The project's ask and deny rules still apply. You will be asked again next time.", "dim");
     }
     if (o.type === "rewind") {
       const index = o.choices[i].value;
@@ -651,7 +655,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       {asking ? (
         <Box flexDirection="column" marginTop={1}>
           <Rule width={width} />
-          <Text bold>{asking.change ? changeTitle(asking.change) : asking.kind === "fetch" ? "Fetch a web page" : "Run a command"}</Text>
+          <Text bold>{asking.change ? changeTitle(asking.change) : asking.kind === "fetch" ? "Fetch a web page" : asking.kind === "mcp" ? "Use an MCP tool" : "Run a command"}</Text>
           <Box flexDirection="column" paddingLeft={1} marginY={1}>
             <Text>{diff ? diff.lines.join("\n") : asking.summary.split(app.root + "/").join("").split(app.root).join(".")}</Text>
           </Box>
@@ -662,7 +666,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
             </Box>
           ) : (
             <>
-              <Text>{asking.change ? (asking.change.before === null ? "Create this file?" : "Make this edit?") : asking.kind === "fetch" ? "Fetch this page?" : "Run this command?"}</Text>
+              <Text>{asking.change ? (asking.change.before === null ? "Create this file?" : "Make this edit?") : asking.kind === "fetch" ? "Fetch this page?" : asking.kind === "mcp" ? "Use this tool?" : "Run this command?"}</Text>
               <List choices={approvalChoices(asking)} index={choice} />
             </>
           )}
@@ -674,7 +678,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
         <Box flexDirection="column" marginTop={1}>
           <Rule width={width} />
           <Text bold>
-            {overlay.type === "trust" ? "This project's .heyho/settings.json sets hooks or allow rules, which run commands without asking. Use them?" : overlay.type === "resume" ? "Reopen a session" : overlay.type === "history" ? "Earlier messages" : overlay.type === "rewind" ? "Go back to before which message?" : overlay.type === "rewindWhat" ? "What should be restored?" : "Carry out this plan?"}
+            {overlay.type === "trust" ? "This project sets hooks, allow rules or MCP servers, which run commands without asking. Use them?" : overlay.type === "resume" ? "Reopen a session" : overlay.type === "history" ? "Earlier messages" : overlay.type === "rewind" ? "Go back to before which message?" : overlay.type === "rewindWhat" ? "What should be restored?" : "Carry out this plan?"}
           </Text>
           {searchable ? <Text>{`Search: ${filter}`}<Text dimColor>{filter ? "" : "type to narrow the list"}</Text></Text> : null}
           <List choices={shownChoices!} index={Math.min(choice, Math.max(0, shownChoices!.length - 1))} numbered={overlay.type === "rewindWhat" || overlay.type === "plan" || overlay.type === "trust"} />

@@ -21,20 +21,23 @@ export const MODE_HELP: Record<Mode, string> = {
 export const PLAN_REFUSAL =
   "Plan mode is on: nothing may be changed yet. Use read, search and read-only commands to investigate, then reply with your plan and stop. The user will switch modes to let you carry it out.";
 
-export type Kind = "edit" | "write" | "bash" | "fetch";
-export type Tool = "bash" | "edit" | "read" | "fetch";
+export type Kind = "edit" | "write" | "bash" | "fetch" | "mcp";
+export type Tool = "bash" | "edit" | "read" | "fetch" | "mcp";
 export type Rule = { tool: Tool; pattern?: string; source: Source; text: string };
 export type Verdict = { action: "allow" | "ask" | "deny"; rule?: Rule };
 
 // "bash(npm test *)", "edit(src/**)", "read(.env)", or a bare tool name. Claude Code's
 // spellings are accepted: Bash, Edit, Write (same as edit), Read.
 export function parseRule(text: string, source: Source): Rule | null {
+  // Claude Code names MCP rules mcp__server or mcp__server__tool.
+  const cc = text.trim().match(/^mcp__([^_]+(?:_[^_]+)*?)(?:__(.+))?$/);
+  if (cc) return { tool: "mcp", pattern: cc[2] && cc[2] !== "*" ? `${cc[1]}.${cc[2]}` : cc[1], source, text: text.trim() };
   const m = text.trim().match(/^([A-Za-z]+)(?:\((.*)\))?$/s);
   if (!m) return null;
   const name = m[1].toLowerCase();
   const tool = name === "write" ? "edit" : name;
   if (name === "webfetch") return { tool: "fetch", pattern: m[2]?.trim().replace(/^domain:/, "") || undefined, source, text: text.trim() };
-  if (tool !== "bash" && tool !== "edit" && tool !== "read" && tool !== "fetch") return null;
+  if (tool !== "bash" && tool !== "edit" && tool !== "read" && tool !== "fetch" && tool !== "mcp") return null;
   return { tool, pattern: m[2]?.trim() || undefined, source, text: text.trim() };
 }
 
@@ -170,6 +173,16 @@ export class Approvals {
 
   // `target` is the command for bash, and the path (first line of the summary) for an edit or new file.
   decide(kind: Kind, summary: string): Verdict {
+    if (kind === "mcp") {
+      // "server" covers every tool on it; "server.tool" covers one.
+      const id = summary.split("\n")[0];
+      for (const action of ["deny", "ask", "allow"] as const) {
+        const rule = this.find(action, "mcp", (p) => p === id || p === id.split(".")[0]);
+        if (rule) return { action, rule };
+        if (action === "deny" && this.mode === "yolo") return { action: "allow" };
+      }
+      return { action: "ask" };
+    }
     if (kind === "fetch") {
       const host = new URL(summary).hostname;
       for (const action of ["deny", "ask", "allow"] as const) {
@@ -235,6 +248,10 @@ export class Approvals {
   }
   allowExact(command: string) {
     this.add("allow", `bash(${command.trim()})`, "saved");
+    this.save();
+  }
+  allowServer(name: string) {
+    this.add("allow", `mcp(${name})`, "saved");
     this.save();
   }
   allowHost(url: string) {

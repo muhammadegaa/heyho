@@ -6,7 +6,7 @@ export type ToolContext = {
   stateDir: string; // ~/.heyho/projects/<hash>, readable by the read tool
   seen: Map<string, string>; // abs path → mtime:size when last read or written by the agent
   // true allows; false or a string declines, the string being what the user said instead.
-  approve: (kind: "edit" | "write" | "bash" | "fetch", summary: string, change?: Change) => Promise<boolean | string>;
+  approve: (kind: "edit" | "write" | "bash" | "fetch" | "mcp", summary: string, change?: Change) => Promise<boolean | string>;
   jobs: Job[]; // commands started in the background this session
   onTodos?: (items: Todo[]) => void; // the model's task list changed
   question?: (question: string, options: string[]) => Promise<string | null>; // null: nobody is there to answer
@@ -39,7 +39,7 @@ export const fail = (text: string): ToolResult => ({ ok: false, text });
 export const ok = (text: string): ToolResult => ({ ok: true, text });
 
 // Asks the user. Returns the result to hand back to the model when they decline.
-export async function declined(ctx: ToolContext, kind: "edit" | "write" | "bash" | "fetch", summary: string, change?: Change): Promise<ToolResult | null> {
+export async function declined(ctx: ToolContext, kind: "edit" | "write" | "bash" | "fetch" | "mcp", summary: string, change?: Change): Promise<ToolResult | null> {
   const a = await ctx.approve(kind, summary, change);
   if (a === true) return null;
   if (typeof a === "string" && (a.startsWith("Plan mode") || a.startsWith("Blocked:"))) return fail(a);

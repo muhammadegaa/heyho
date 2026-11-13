@@ -320,8 +320,8 @@ test("/clear then /resume reopens the earlier session by its first message", asy
 test("/help lists commands and keys", async () => {
   s = await open();
   await s.send("/help");
-  const screen = await s.wait(/\/rewind/);
-  expect(screen).toMatch(/Shift\+Tab changes mode/);
+  await s.wait(/Shift\+Tab changes mode/);
+  expect(s.scrollback()).toMatch(/\/rewind/); // the list is longer than the window
 });
 
 // ---- leaving ----
@@ -846,7 +846,7 @@ test("/tasks stop ends a background command", async () => {
 test("a project with hooks or allow rules asks for trust first; No leaves them off, Yes is remembered", async () => {
   const files = settings({ permissions: { allow: ["bash(node *)"] }, hooks: { PreToolUse: [{ matcher: "bash", command: "touch hook-ran.flag" }] } });
   s = await open({ files, steps: [BASH, reply("Ran.\n")] });
-  expect(s.screen()).toMatch(/sets hooks or allow rules/);
+  expect(s.screen()).toMatch(/sets hooks, allow rules or MCP servers/);
   await s.key("2");
   await s.wait(/Left off/);
   await s.send("run it");
@@ -868,7 +868,7 @@ test("a project with hooks or allow rules asks for trust first; No leaves them o
   s.close();
 
   s = await open({ root });
-  expect(s.screen()).not.toMatch(/sets hooks or allow rules/);
+  expect(s.screen()).not.toMatch(/sets hooks, allow rules or MCP servers/);
 });
 
 test("a hook that blocks a call is shown in the transcript", async () => {
