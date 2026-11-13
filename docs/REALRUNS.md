@@ -57,11 +57,11 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 38 | Compact | big | a long reading session, then `/compact`, then a follow-up question | The follow-up is answered from the notes or by rereading | pass (after the fixes for 39). Two files read, `/compact`, then a follow-up answered from the notes in one step with no reads. The notes named the request, both files, what each does and the key class |
 | 39 | Automatic shortening | big | keep reading large files until the context passes 85% | Shortens on its own and carries on with the task | defects; partly confirmed. Four runs. Run 1: parallel reads took the prompt to 113% of the context and the user saw the server's raw error (dc7ae3a). Run 2: shortened without error, but the notes were ten tool calls written as text and the task was lost (dc7ae3a). Run 3: the task was kept, but both tries at notes thought for 7 minutes and wrote nothing (0ef6490). Run 4: shortened once with notes written, then filled the context again and the turn ended with "type /compact" (e810d49, scripted test only; not rerun on the real model). The task itself never finished in any run: the model reads all 37 files before counting anything, which cannot fit in 64k |
 | 40 | Resume | cart | `/rename`, `/exit`, `--resume <name>`, a follow-up | The follow-up uses the earlier conversation | pass, model. `--resume discount` reopened the named session with the whole conversation (checked in the session file). Asked which code it added last, the model said HALF; the right answer was CODEA |
-| 41 | Queue and interrupt | cart | type a second message mid-turn; Esc during a long reply | Queued message runs next; Esc stops and keeps the text | not run |
-| 42 | Shell escape | cart | `!git log --oneline`, then `what was the last commit?` | The model has seen the output | not run |
-| 43 | File mention | big | `explain @src/compact.ts` | The file is read without a search first | not run |
-| 44 | Headless formats | cart | `--json`, `--output-format stream-json`, `-p` with stdin | Valid JSON; events per line; stdin is used | not run |
-| 45 | Headless tool limits | cart | `--tools read,search "fix the bug in discount"` and `--allowed-tools "bash(npm test *)" --mode dontask "run the tests"` | First cannot edit and says so; second runs only the tests | not run |
+| 41 | Queue and interrupt | cart | type a second message mid-turn; Esc during a long reply | Queued message runs next; Esc stops and keeps the text | pass. The message typed mid-turn showed as queued and ran next (README changed). Esc stopped a long reply, kept the text, and the summary line had no stale step count |
+| 42 | Shell escape | cart | `!git log --oneline`, then `what was the last commit?` | The model has seen the output | pass. After `!git log --oneline`, the model gave the right hash and message without running anything |
+| 43 | File mention | big | `explain @src/compact.ts` | The file is read without a search first | pass. The mentioned file was read directly (2 steps, no search) and explained correctly |
+| 44 | Headless formats | cart | `--json`, `--output-format stream-json`, `-p` with stdin | Valid JSON; events per line; stdin is used | pass. `--json`: one object, status done, reply `2`. `--output-format stream-json`: five lines, each valid JSON, from `start` to `result`. `-p` with piped input: the input was used |
+| 45 | Headless tool limits | cart | `--tools read,search "fix the bug in discount"` and `--allowed-tools "bash(npm test *)" --mode dontask "run the tests"` | First cannot edit and says so; second runs only the tests | defect, then pass. `--allowed-tools "bash(npm test *)" --mode dontask`: tests ran, `ls -la /etc` was refused. `--tools read,search` with a fix request: the model read the file ten times and was stopped by the repeat guard without saying it could not edit; fixed in 9148c14. Rerun: three steps, said it could not edit and gave the exact change |
 | 46 | Step limit | big | `--max-steps 3 "find every TODO and list them"` | Stops at the limit with a clear status | not run |
 | 47 | Settings | cart | `editorMode: vim`, `theme: none`, a `statusLine` command | Vim keys work; no colour codes; status line shows the command's output | not run |
 | 48 | Bug fix, multi-file | big | break `diffLines` in a copy (off-by-one in hunk line numbers); `the diff line numbers are wrong; find and fix it` | The failing test is found, the fix is right, the suite passes | not run |
@@ -88,6 +88,7 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 39 | The notes kept after shortening were tool calls written as text | dc7ae3a | `test/loop.test.ts` "notes that come back as a tool call are asked for again…" |
 | 39 | Writing notes, the model thought to the output limit and wrote nothing | 0ef6490: notes, step-limit summaries and the retry after runaway thinking go without thinking | `test/loop.test.ts`, the shortening and all-thinking tests |
 | 39 | A second fill of the context in one turn ended the turn | e810d49: up to three shortenings a turn | `e2e/headless.test.ts` "a long task is shortened more than once in one run and still finishes" |
+| 45 | With `--tools` the model was not told which tools it had, and looped on the ones it did | 9148c14 | `e2e/headless.test.ts` "--tools limits which tools the model is offered" |
 
 ## Model behaviour recorded
 
@@ -99,6 +100,8 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 - Scenario 20: to test its own work the model ran heyho inside heyho. With one server slot, each nested run evicts the outer session's cached prompt, so the next outer step waited over a minute.
 
 - Scenario 27: told not to edit the tests, the model edited a test anyway once the Stop hook insisted the suite pass. The two instructions conflicted.
+
+- Scenario 44: asked for the first word of "reply with only the first word of this sentence", the model said "this".
 
 ## Questions for Ega
 
