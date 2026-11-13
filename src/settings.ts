@@ -16,7 +16,7 @@ export type Settings = {
   permissions?: RuleList;
   hooks?: unknown;
   editorMode?: "vim" | "normal"; // vim keys in the input box
-  theme?: "default" | "none"; // none: no colours
+  theme?: "default" | "light" | "none"; // light: for a light background; none: no colours
   statusLine?: { command?: string }; // a command whose first line of output replaces the right of the footer
 };
 export type Layer = { source: Source; file: string; settings: Settings };

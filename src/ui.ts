@@ -11,9 +11,12 @@ const esc = (code: string) => (s: string) => `\x1b[${code}m${s}\x1b[0m`;
 const same = (s: string) => s;
 export type Paint = Record<"dim" | "red" | "green" | "yellow" | "cyan" | "bold", (s: string) => string>;
 // NO_COLOR (https://no-color.org) and "theme": "none" in settings turn every style off.
+// "theme": "light" is for a light background, where yellow and cyan are hard to read: they
+// become dark orange and blue.
+export const lightTheme = () => process.env.HEYHO_THEME === "light";
 export const paint = (on: boolean): Paint =>
   on && !process.env.NO_COLOR
-    ? { dim: esc("2"), red: esc("31"), green: esc("32"), yellow: esc("33"), cyan: esc("36"), bold: esc("1") }
+    ? { dim: esc("2"), red: esc("31"), green: esc("32"), yellow: esc(lightTheme() ? "38;5;130" : "33"), cyan: esc(lightTheme() ? "34" : "36"), bold: esc("1") }
     : { dim: same, red: same, green: same, yellow: same, cyan: same, bold: same };
 
 // A terminal that reports no width (or a tiny one) gets a normal line length.

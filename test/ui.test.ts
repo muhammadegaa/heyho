@@ -222,6 +222,19 @@ test("a session reloads its messages, starting after the last reset", async () =
   expect(listSessions(dir, 10, { headless: true }).map((x) => x.first)).toContain("one-off question");
 });
 
+test("the light theme swaps yellow and cyan for colours that show on a light background", async () => {
+  const { paint } = await import("../src/ui.ts");
+  expect(paint(true).yellow("x")).toBe("\x1b[33mx\x1b[0m");
+  process.env.HEYHO_THEME = "light";
+  try {
+    expect(paint(true).yellow("x")).toBe("\x1b[38;5;130mx\x1b[0m");
+    expect(paint(true).cyan("x")).toBe("\x1b[34mx\x1b[0m");
+    expect(paint(true).green("x")).toBe("\x1b[32mx\x1b[0m");
+  } finally {
+    delete process.env.HEYHO_THEME;
+  }
+});
+
 test("ages are given in the largest unit that fits", async () => {
   const { ago } = await import("../src/session.ts");
   const now = Date.UTC(2026, 10, 13, 12, 0, 0);

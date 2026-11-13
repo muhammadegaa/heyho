@@ -12,12 +12,15 @@ import { expand, loadCommands } from "../commands.ts";
 import { listFiles } from "../input.ts";
 import { heyhoHome } from "../settings.ts";
 import { ago, sessionPreview, type SessionInfo } from "../session.ts";
-import { changeTitle, paint, renderDiff, tidyPaths } from "../ui.ts";
+import { changeTitle, lightTheme, paint, renderDiff, tidyPaths } from "../ui.ts";
 import * as ed from "./edit.ts";
 import { normalKey } from "./vim.ts";
 import { secs, type Store } from "./store.ts";
 
 const p = paint(true);
+// The highlight and warning colours, which differ on a light background.
+const ACCENT = lightTheme() ? "blue" : "cyan";
+const WARN = lightTheme() ? "#af5f00" : "yellow";
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MENU_ROWS = 8;
 const HISTORY_MAX = 500;
@@ -84,7 +87,7 @@ function List<T>({ choices, index, numbered = true }: { choices: Choice<T>[]; in
   return (
     <Box flexDirection="column">
       {choices.map((c, i) => (
-        <Text key={i} color={i === index ? "cyan" : undefined}>
+        <Text key={i} color={i === index ? ACCENT : undefined}>
           {i === index ? "❯ " : "  "}
           {numbered ? `${i + 1}. ` : ""}
           {c.label}
@@ -104,7 +107,7 @@ function Footer({ width, mode, hint, right }: { width: number; mode: Mode; hint:
   const shown = hint.length <= room ? hint : room > 8 ? hint.slice(0, room - 1) + "…" : "";
   return (
     <Box justifyContent="space-between" width={width}>
-      <Text color={mode === "ask" ? undefined : mode === "plan" ? "blue" : "yellow"} wrap="truncate-end">
+      <Text color={mode === "ask" ? undefined : mode === "plan" ? "blue" : WARN} wrap="truncate-end">
         {label}
         <Text dimColor>{shown ? ` · ${shown}` : ""}</Text>
       </Text>
@@ -704,7 +707,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       ) : null}
       {a ? (
         <Box marginTop={1}>
-          <Text color="cyan">{FRAMES[Math.floor(Date.now() / 120) % FRAMES.length]} </Text>
+          <Text color={ACCENT}>{FRAMES[Math.floor(Date.now() / 120) % FRAMES.length]} </Text>
           <Text dimColor wrap="truncate-end">
             {`${a.label} · ${secs(Date.now() - a.since)}${a.detail ? ` · ${a.detail}` : ""} · esc to stop`}
           </Text>
@@ -773,7 +776,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       {showTodos && live.todos.length && !asking && !overlay ? (
         <Box flexDirection="column" marginTop={1}>
           {live.todos.slice(0, 10).map((t, i) => (
-            <Text key={i} dimColor={t.status === "done"} color={t.status === "doing" ? "cyan" : undefined} wrap="truncate-end">
+            <Text key={i} dimColor={t.status === "done"} color={t.status === "doing" ? ACCENT : undefined} wrap="truncate-end">
               {`  ${t.status === "done" ? "☑" : t.status === "doing" ? "◐" : "☐"} ${t.text}`}
             </Text>
           ))}
@@ -800,7 +803,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
           {menuOpen ? (
             <Box flexDirection="column">
               {menu!.rows.map((r, i) => (
-                <Text key={r.text} color={i === menuIndex ? "cyan" : undefined} wrap="truncate-end">
+                <Text key={r.text} color={i === menuIndex ? ACCENT : undefined} wrap="truncate-end">
                   {i === menuIndex ? "❯ " : "  "}
                   {r.text.padEnd(menu!.kind === "slash" ? 12 : 0)}
                   <Text dimColor>{r.hint ? `  ${r.hint}` : ""}</Text>

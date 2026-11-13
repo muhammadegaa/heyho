@@ -1012,3 +1012,16 @@ test("a status line command's output replaces the right of the footer and follow
   await s.wait(/my line · mode:auto/);
   expect(s.screen()).not.toMatch(/% context/);
 });
+
+test("\"theme\": \"light\" highlights the chosen row in blue, where the default uses cyan", async () => {
+  s = await open();
+  await s.type("/");
+  await s.wait(/\/help\s+commands and keys/);
+  expect(s.styled()).toMatch(/\x1b\[36m[^\n]*\/help/);
+  s.close();
+  s = await open({ home: { "settings.json": JSON.stringify({ theme: "light" }) } });
+  await s.type("/");
+  await s.wait(/\/help\s+commands and keys/);
+  expect(s.styled()).toMatch(/\x1b\[34m[^\n]*\/help/);
+  expect(s.styled()).not.toMatch(/\x1b\[36m/);
+});

@@ -77,11 +77,13 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 
 - Session picker: each entry shows how long ago it was, and Tab shows what was asked in the highlighted session. `e2e/screen.test.ts` "the session list shows how long ago each session was, and Tab previews what was asked in it"; `test/ui.test.ts` "ages are given in the largest unit that fits".
 
+- Themes: `"theme": "light"` for a light background (highlight in blue, warnings in dark orange), beside the default and `"none"`. `e2e/screen.test.ts` "\"theme\": \"light\" highlights the chosen row in blue, where the default uses cyan"; `test/ui.test.ts` "the light theme swaps yellow and cyan for colours that show on a light background".
+
 ### Still open
 
 1. Image paste. Out of scope for now: the local models in use take text only, so there is nothing to send an image to.
 
-Smaller differences that remain inside closed rows: code colouring is by rough rules, not a grammar per language; vim mode covers the common keys, not registers, counts or visual mode; there is one colour theme plus "none"; MCP is stdio only; there is no full-screen mode with mouse scrolling.
+Smaller differences that remain inside closed rows: code colouring is by rough rules, not a grammar per language; vim mode covers the common keys, not registers, counts or visual mode; MCP is stdio only; there is no full-screen mode with mouse scrolling.
 
 Different by design, not planned: a second model that reviews each action (Claude Code's `auto` mode). heyho's no-prompt mode contains commands with the macOS sandbox instead. Out of scope: IDE, desktop, web and cloud features.
 
