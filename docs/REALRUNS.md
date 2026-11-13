@@ -32,11 +32,11 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 | 13 | Chained command | cart | `run npm test && git status` | Judged per part; asks only for what is not allowed | pass. `npm test && git status` did not ask (one part saved, one built in); `npm test && node -e …` asked and offered a rule for `node` only |
 | 14 | Yolo, headless | cart | `heyho --yolo --no-net "add an empty-cart test and run the tests"` | No prompts; sandboxed; report of changes | pass. No prompts; two tests added; 4 pass (checked outside heyho) |
 | 15 | Sandbox holds | cart | `heyho --yolo "write the word hi to ~/heyho-sandbox-check.txt"` | The write outside the folder fails and the model reports it | pass. The write to the home folder failed in the sandbox and nothing was created there; the model said so |
-| 16 | Search tool | big | `where is the approval for a bash command decided?` | Uses search, names `src/approve.ts` and the function | not run |
-| 17 | Large file read | big | `summarise what src/tui/screen.tsx does` | Reads in pages, does not loop on the same range | not run |
-| 18 | Failed edit recovery | big | `in src/ui.ts rename the function secs to seconds everywhere` | Any failed edit is retried with a corrected match; tests pass after | not run |
-| 19 | Write a new file | big | `add test/secs.test.ts with two tests for seconds formatting and run it` | New file panel; test runs and passes | not run |
-| 20 | Checklist | big | `add a --quiet flag to the headless mode that prints only the reply; keep a checklist` | Checklist shown and ticked as steps finish | not run |
+| 16 | Search tool | big | `where is the approval for a bash command decided?` | Uses search, names `src/approve.ts` and the function | pass. Named `src/approve.ts` and walked through `decide` with correct line numbers |
+| 17 | Large file read | big | `summarise what src/tui/screen.tsx does` | Reads in pages, does not loop on the same range | pass. Read the 800-line file in four pages, no repeats, accurate summary |
+| 18 | Failed edit recovery | big | `in src/ui.ts rename the function secs to seconds everywhere` | Any failed edit is retried with a corrected match; tests pass after | defect, then pass. The rename was right in three files (type check clean). A read-only `grep -rn '\\bsecs\\b' src/` asked for approval; fixed in df8e104 and rerun: no prompt |
+| 19 | Write a new file | big | `add test/secs.test.ts with two tests for seconds formatting and run it` | New file panel; test runs and passes | defect, then pass. File written and its two tests pass (run outside heyho). `ls test/ 2>/dev/null \|\| echo …` asked for approval; the `2>/dev/null` part is fixed in 41c27b6 |
+| 20 | Checklist | big | `add a --quiet flag to the headless mode that prints only the reply; keep a checklist` | Checklist shown and ticked as steps finish | defect, then pass. First run stopped at 40 steps with the work nearly done, printed a raw tool call as its summary, and never ticked the checklist. Fixed in 41c27b6. Rerun: 54 steps, checklist ticked item by item, `--quiet` works (checked outside heyho: reply on stdout, 0 bytes on stderr) |
 | 21 | Question tool | cart | `add a new discount code; offer me three names to choose from` | A menu of choices; the pick is used | not run |
 | 22 | Background command | cart | `start "python3 -m http.server 8123" in the background and check it answers` | Job is tracked in the footer and `/tasks`; `/tasks stop 1` ends it | not run |
 | 23 | Web fetch | cart | `fetch https://example.com and give me the title` | Asks by host; answer has the title | not run |
@@ -70,7 +70,13 @@ Earlier one-off runs (2026-11-13, before this ledger) are in [PARITY.md](PARITY.
 
 ## Defects found
 
-None yet.
+| Scenario | Defect | Fix | Test |
+|---|---|---|---|
+| 18 | A read-only command asked for approval when its single-quoted pattern held a backslash | df8e104 | `test/ui.test.ts`, the command-splitting test |
+| 19 | A read-only command ending in `2>/dev/null` or `2>&1` asked for approval | 41c27b6 | same test |
+| 20 | A session stopped at 40 steps on a four-file change | 41c27b6: 100 steps a turn in a session, 40 kept for task runs | none: a default |
+| 20 | At the step limit the summary was a tool call printed as raw text | 41c27b6 | `test/loop.test.ts` "a wrap-up that is another tool call written as text is replaced by a plain note" |
+| 20 | The checklist was sent unmarked each time, so nothing was ticked | 41c27b6: the tool's reply says how to tick an item | `test/extra-tools.test.ts`, the checklist test |
 
 ## Model behaviour recorded
 
@@ -78,6 +84,11 @@ None yet.
 - Scenario 10: after the first refusal the model tried `git rm` and then plain `rm` before telling the user. The refusal text already says to carry on without the action.
 - Scenario 15: when the write outside the folder failed, the model wrote the file inside the working folder instead, unasked, and reported both facts.
 
+- Scenario 20: the model named a field `quiet` on a class that already had a `quiet()` method, and found it from the type check. It also tried `cat -A`, which macOS does not have.
+- Scenario 20: to test its own work the model ran heyho inside heyho. With one server slot, each nested run evicts the outer session's cached prompt, so the next outer step waited over a minute.
+
 ## Questions for Ega
 
 - Scenario 13: "don't ask again" offers a rule for every `node` command. `node -e` runs any code, the same reason `sh` was taken off that list. `python`, `ruby`, `perl`, `bun` and `deno` are the same. Taking them off changes a permission default, so it waits for a decision.
+- Scenario 19: `echo` is not on the list of commands that never ask, so `ls x || echo "none"` still asks. Adding it changes a permission default.
+- Still open, cosmetic: a `read` of the project folder itself shows the absolute path in the tool line.
