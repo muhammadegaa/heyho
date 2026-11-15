@@ -15,6 +15,19 @@ export const backspace = (e: Edit): Edit => (e.cursor ? { value: e.value.slice(0
 export const del = (e: Edit): Edit => ({ value: e.value.slice(0, e.cursor) + e.value.slice(e.cursor + 1), cursor: e.cursor });
 export const left = (e: Edit): Edit => ({ ...e, cursor: Math.max(0, e.cursor - 1) });
 export const right = (e: Edit): Edit => ({ ...e, cursor: Math.min(e.value.length, e.cursor + 1) });
+const isWord = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}_]/u.test(c);
+export const wordLeft = (e: Edit): Edit => {
+  let i = e.cursor;
+  while (i > 0 && !isWord(e.value[i - 1])) i--;
+  while (i > 0 && isWord(e.value[i - 1])) i--;
+  return { ...e, cursor: i };
+};
+export const wordRight = (e: Edit): Edit => {
+  let i = e.cursor;
+  while (i < e.value.length && !isWord(e.value[i])) i++;
+  while (i < e.value.length && isWord(e.value[i])) i++;
+  return { ...e, cursor: i };
+};
 export const home = (e: Edit): Edit => ({ ...e, cursor: lineStart(e) });
 export const end = (e: Edit): Edit => ({ ...e, cursor: lineEnd(e) });
 export const killToEnd = (e: Edit): Edit => ({ value: e.value.slice(0, e.cursor) + e.value.slice(lineEnd(e)), cursor: e.cursor });

@@ -252,6 +252,9 @@ test("with the kitty keyboard protocol on, Esc, Ctrl+U, Ctrl+J and Ctrl+C still 
   await s.type("\x1b[106;5u"); // Ctrl+J
   await s.type("two");
   await s.wait(/› one\n\s+two/);
+  await s.type("\x1b[13;3u"); // Option+Enter
+  await s.type("three");
+  await s.wait(/› one\n\s+two\n\s+three/);
   await s.type("\x1b[99;5u"); // Ctrl+C: the first clears the input
   await s.wait(/describe a task/);
   await s.type("\x1b[99;5u");
@@ -270,6 +273,22 @@ test("Up recalls the previous message; editing keys work", async () => {
   await s.wait(/› first\s*$/m);
   await s.key("C-u");
   await s.wait(/describe a task/);
+});
+
+test("Option+Left and Option+Right move by word, and Option+Backspace deletes one", async () => {
+  // ESC b and ESC f are what Warp, Terminal and iTerm send; ESC [1;3D is the xterm form (Ghostty, kitty).
+  s = await open({ steps: [reply("ok\n")] });
+  await s.type("fix the bug");
+  await s.type("\x1bb");
+  await s.type("big ");
+  await s.wait(/› fix the big bug/);
+  await s.type("\x1b[1;3D");
+  await s.type("\x1b[1;3D");
+  await s.type("\x1bf");
+  await s.type("X");
+  await s.wait(/› fix theX big bug/);
+  await s.type("\x1b\x7f");
+  await s.wait(/› fix  big bug/);
 });
 
 test("! runs a shell command and shows its output", async () => {

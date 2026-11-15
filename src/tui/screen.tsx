@@ -55,6 +55,7 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
 
 const KEYS = `Enter sends · Shift+Enter, Ctrl+J or \\ then Enter starts a new line · paste keeps its lines
 / commands · @ files · ! runs a shell command yourself · Up/Down history
+Option+Left/Right moves by word · Option+Backspace or Ctrl+W deletes a word · Ctrl+A/E start and end of line · Ctrl+U/K delete to start or end
 Shift+Tab changes mode · Esc stops the model · Esc Esc on an empty line opens rewind
 Ctrl+R searches history · Ctrl+G edits the message in $EDITOR · Ctrl+S sets the draft aside and brings it back
 Ctrl+O shows the last command's full output · Ctrl+T hides or shows the checklist · Ctrl+L redraws · Ctrl+C twice or Ctrl+D quits`;
@@ -667,13 +668,15 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       if (dir > 0 && historyAt.current >= 0) return setEdit(ed.at(--historyAt.current < 0 ? draft.current : h[historyAt.current]));
       return;
     }
+    if (key.meta && (key.leftArrow || input === "b")) return setEdit(ed.wordLeft(edit));
+    if (key.meta && (key.rightArrow || input === "f")) return setEdit(ed.wordRight(edit));
     if (key.leftArrow) return setEdit(ed.left(edit));
     if (key.rightArrow) return setEdit(ed.right(edit));
     if (key.home || (key.ctrl && input === "a")) return setEdit(ed.home(edit));
     if (key.end || (key.ctrl && input === "e")) return setEdit(ed.end(edit));
     if (key.ctrl && input === "k") return change(ed.killToEnd(edit));
     if (key.ctrl && input === "u") return change(ed.killToStart(edit));
-    if (key.ctrl && input === "w") return change(ed.killWord(edit));
+    if ((key.ctrl && input === "w") || (key.meta && key.backspace)) return change(ed.killWord(edit));
     if (key.backspace || key.delete) return change(ed.backspace(edit));
     if (input && !key.ctrl && !key.meta) {
       // Text and Enter can arrive together (a fast typist, a script): send what came before the Enter.

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { at, atToken, backspace, EMPTY, insert, killToStart, killWord, rank, replaceToken, vertical } from "../src/tui/edit.ts";
+import { at, atToken, backspace, EMPTY, insert, killToStart, killWord, rank, replaceToken, vertical, wordLeft, wordRight } from "../src/tui/edit.ts";
 import { Store } from "../src/tui/store.ts";
 
 const plain = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -11,6 +11,16 @@ test("typing, deleting and killing text move the cursor with the text", () => {
   expect(backspace(e)).toEqual({ value: "fix allthe bug", cursor: 7 });
   expect(killWord(at("run src/cart.js"))).toEqual({ value: "run src/", cursor: 8 });
   expect(killToStart({ value: "one\ntwo three", cursor: 7 })).toEqual({ value: "one\n three", cursor: 4 });
+});
+
+test("Option+Left and Option+Right move by word", () => {
+  const e = at("fix src/cart.js now");
+  expect(wordLeft(e).cursor).toBe(16); // start of "now"
+  expect(wordLeft({ ...e, cursor: 16 }).cursor).toBe(13); // start of "js"
+  expect(wordLeft({ ...e, cursor: 2 }).cursor).toBe(0);
+  expect(wordRight({ ...e, cursor: 0 }).cursor).toBe(3); // end of "fix"
+  expect(wordRight({ ...e, cursor: 3 }).cursor).toBe(7); // end of "src"
+  expect(wordRight({ ...e, cursor: 17 }).cursor).toBe(19);
 });
 
 test("up and down move inside a multi-line message and report its edges", () => {
