@@ -144,13 +144,17 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
   // print the transcript again at the new width. Waits for the drag to settle.
   const { stdout } = useStdout();
   const [printed, setPrinted] = useState(0);
+  // Clears the terminal, scrollback included, and prints the transcript again from the top.
+  const repaint = () => {
+    stdout.write("\x1b[2J\x1b[3J\x1b[H");
+    setPrinted((n) => n + 1);
+  };
   const lastWidth = useRef(columns);
   useEffect(() => {
     if (columns === lastWidth.current) return;
     const timer = setTimeout(() => {
       lastWidth.current = columns;
-      stdout.write("\x1b[2J\x1b[3J\x1b[H");
-      setPrinted((n) => n + 1);
+      repaint();
     }, 150);
     return () => clearTimeout(timer);
   }, [columns]);
@@ -314,6 +318,8 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       }
       case "clear":
         app.clear();
+        store.reset();
+        repaint();
         return say("New conversation. The previous one is under /resume.", "dim");
       case "resume":
         return openResume();
@@ -449,6 +455,9 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
     setOverlay(null);
     if (o.type === "resume") {
       app.resume(o.choices[i].value);
+      store.reset();
+      store.replay(app.messages);
+      repaint();
       refresh();
       return store.note(`Reopened "${o.choices[i].label}". Your next message continues it.`, "dim");
     }
@@ -534,10 +543,7 @@ export function Screen({ app, store, version, pickSession }: { app: App; store: 
       if (picked < 0) return;
       return picked < asking.options.length ? asking.resolve(asking.options[picked]) : setSaying(ed.EMPTY);
     }
-    if (key.ctrl && input === "l") {
-      stdout.write("\x1b[2J\x1b[3J\x1b[H");
-      return setPrinted((n) => n + 1);
-    }
+    if (key.ctrl && input === "l") return repaint();
 
     // Typing what to do instead of approving.
     if (saying && pending) {

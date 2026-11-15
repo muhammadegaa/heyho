@@ -395,6 +395,31 @@ test("no server: a plain message says how to start one", async () => {
   expect(r.stderr.toString()).toMatch(/No model server answered[\s\S]*llama-server -m/);
 });
 
+test("/clear empties the screen to the header; /resume and --continue print the earlier conversation again", async () => {
+  // In Warp, /clear left the whole conversation on screen, which read as if nothing had been cleared.
+  s = await open({ steps: [call("read", { path: "greet.js" }), reply("Hello there.\n")] });
+  await s.send("say hello");
+  await s.wait(/Hello there\./);
+  await s.send("/clear");
+  await s.wait(/New conversation/);
+  expect(s.screen()).toMatch(/heyho v/);
+  expect(s.screen()).not.toMatch(/say hello|Hello there/);
+  expect(s.scrollback()).not.toMatch(/Hello there/);
+  await s.send("/resume");
+  await s.wait(/Reopen a session/);
+  await s.key("Enter");
+  const resumed = await s.wait(/Reopened "say hello"/);
+  expect(resumed).toMatch(/› say hello[\s\S]*read greet\.js[\s\S]*Hello there\.[\s\S]*Reopened "say hello"/);
+  expect(resumed.match(/Hello there\./g)!.length).toBe(1);
+  const root = s.root;
+  await s.send("/exit");
+  await s.wait(/heyho has exited/);
+  s.close();
+  s = await open({ root, args: ["--continue"] });
+  const continued = await s.wait(/Continuing the session/);
+  expect(continued).toMatch(/heyho v[\s\S]*› say hello[\s\S]*Hello there\.[\s\S]*Continuing the session/);
+});
+
 // ---- rough handling ----
 
 test("Ctrl+C during an approval stops the run, and the next message works", async () => {

@@ -71,7 +71,7 @@ You can type while the model works; the message is queued and sent when the turn
 | `/help` | commands and keys |
 | `/context` | how much of the model's context is in use |
 | `/compact` | shorten the conversation to free context |
-| `/clear` | start a new conversation; the old one stays under `/resume` |
+| `/clear` | start a new conversation and clear the screen; the old one stays under `/resume` |
 | `/resume` | reopen an earlier session; Tab previews what was asked in it |
 | `/rewind` | go back to an earlier message: files, conversation or both |
 | `/undo` | take back the file changes of the last turn that made any |
@@ -236,7 +236,7 @@ Review $ARGUMENTS for bugs. List them with line numbers. Do not edit anything.
 
 ## Sessions and context
 
-Every session is a file under `~/.heyho/projects/<id>/sessions/`. `/resume`, `--continue` and `--resume` reopen one with its conversation, its rewind points and its mode.
+Every session is a file under `~/.heyho/projects/<id>/sessions/`. `/resume`, `--continue` and `--resume` reopen one with its conversation, its rewind points and its mode, and print what was asked, the tool calls and the replies again.
 
 When the conversation passes 85% of the model's context, heyho shortens it on its own: the model writes notes, your requests are carried over word for word, and the work goes on. This can happen up to three times in one turn. Files read before a shortening are read again when needed.
 

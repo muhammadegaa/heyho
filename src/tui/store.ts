@@ -1,7 +1,9 @@
 // The state behind the Ink screen. Finished things become transcript items, printed once and
 // left to the terminal's own scrollback; what is still changing lives in `live`.
 import type { ApprovalAnswer, ApprovalRequest, Outcome } from "../app.ts";
+import { CARRY_ON, NOTES_PREFIX } from "../compact.ts";
 import type { AgentEvent } from "../loop.ts";
+import type { Message } from "../model.ts";
 import type { Change, Todo } from "../tools/types.ts";
 import { Markdown, outputTail, paint, renderDiff, STOP_HELP, tidyPaths, type RunInfo } from "../ui.ts";
 
@@ -66,6 +68,45 @@ export class Store {
     this.items = [...this.items, { id: this.nextId++, mark, text, gap }];
     this.emit();
   }
+  // Back to the header alone, for /clear and before a session is printed again.
+  reset() {
+    this.items = this.items.slice(0, 1);
+    this.lastChange = null;
+    this.lastOutput = null;
+    this.emit();
+  }
+
+  // Prints a reopened session's conversation: what was asked, the tool calls made, and the
+  // replies. Tool output is not repeated.
+  replay(messages: Message[]) {
+    let shortened = false;
+    for (const m of messages) {
+      if (m.role === "user" && typeof m.content === "string") {
+        if (m.content.startsWith(NOTES_PREFIX)) {
+          if (!shortened) this.add(" ", p.dim("Earlier messages were shortened to notes."), true);
+          shortened = true;
+        } else if (m.content !== CARRY_ON) {
+          // Notes heyho put in front of a message ("[The user ran …]") are not what was typed.
+          const typed = m.content.replace(/^(\[[^\]]*\]\s*)+/, "").trim();
+          if (typed) this.user(typed);
+        }
+      } else if (m.role === "assistant") {
+        for (const c of m.tool_calls ?? []) {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(c.function.arguments);
+          } catch {}
+          if (c.function.name !== "todo") this.add(p.dim("⏺"), `${p.bold(c.function.name)} ${this.arg(args, 100)}`);
+        }
+        if (typeof m.content === "string" && m.content.trim()) {
+          const md = new Markdown(p);
+          const lines = (md.push(m.content + "\n") + md.flush()).replace(/\n$/, "").split("\n");
+          lines.forEach((line, i) => this.add(i ? " " : "⏺", line, i === 0));
+        }
+      }
+    }
+  }
+
   note(text: string, tone: "dim" | "warn" | "error" | "plain" = "plain") {
     this.add(" ", tone === "dim" ? p.dim(text) : tone === "warn" ? p.yellow(text) : tone === "error" ? p.red(text) : text);
   }
