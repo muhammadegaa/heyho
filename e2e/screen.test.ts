@@ -225,7 +225,10 @@ test("a message can span lines: backslash-Enter, Ctrl+J, and a multi-line paste"
   await s.type("second");
   await s.key("C-j");
   await s.type("third");
-  await s.wait(/› first\n\s+second\n\s+third/);
+  // Shift+Enter as a terminal reports it once heyho turns on the kitty keyboard protocol (Warp, Ghostty, kitty, WezTerm).
+  await s.type("\x1b[13;2u");
+  await s.type("fourth");
+  await s.wait(/› first\n\s+second\n\s+third\n\s+fourth/);
   await s.key("C-u", "C-u", "C-u", "C-u", "C-u");
   await s.key("C-c");
   await s.paste("alpha\nbeta\ngamma");
@@ -233,6 +236,28 @@ test("a message can span lines: backslash-Enter, Ctrl+J, and a multi-line paste"
   await s.key("Enter");
   const screen = await s.wait(/worked for/);
   expect(screen.match(/Got it\./g)?.length).toBe(1);
+});
+
+test("with the kitty keyboard protocol on, Esc, Ctrl+U, Ctrl+J and Ctrl+C still work", async () => {
+  // tmux does not answer the protocol query, so these are the sequences Warp or Ghostty send, typed in directly.
+  s = await open({ steps: [reply("ok\n")] });
+  await s.type("/he");
+  await s.wait(/\/help\s+commands and keys/);
+  await s.type("\x1b[27u"); // Esc
+  await s.wait(/› \/he\s*\n─/);
+  expect(s.screen()).not.toMatch(/commands and keys/);
+  await s.type("\x1b[117;5u"); // Ctrl+U
+  await s.wait(/describe a task/);
+  await s.type("one");
+  await s.type("\x1b[106;5u"); // Ctrl+J
+  await s.type("two");
+  await s.wait(/› one\n\s+two/);
+  await s.type("\x1b[99;5u"); // Ctrl+C: the first clears the input
+  await s.wait(/describe a task/);
+  await s.type("\x1b[99;5u");
+  await s.wait(/press ctrl\+c again to quit/);
+  await s.type("\x1b[99;5u");
+  await s.wait(/heyho has exited/);
 });
 
 test("Up recalls the previous message; editing keys work", async () => {
@@ -370,31 +395,6 @@ test("the session list shows how long ago each session was, and Tab previews wha
   expect(panel()).not.toMatch(/goodbye in French/);
 });
 
-test("/help lists commands and keys", async () => {
-  s = await open();
-  await s.send("/help");
-  await s.wait(/Shift\+Tab changes mode/);
-  expect(s.scrollback()).toMatch(/\/rewind/); // the list is longer than the window
-});
-
-// ---- leaving ----
-
-test("Ctrl+C clears typed text; twice on an empty box quits", async () => {
-  s = await open();
-  await s.type("half a thought");
-  await s.key("C-c");
-  await s.wait(/describe a task/);
-  await s.key("C-c");
-  await s.wait(/press ctrl\+c again to quit/);
-  await s.key("C-c");
-  await s.wait(/heyho has exited/);
-});
-
-test("no server: a plain message says how to start one", async () => {
-  const r = Bun.spawnSync(["bun", join(import.meta.dirname, "../src/cli.ts"), "--base-url", "http://127.0.0.1:9/v1", "--plain"], { stdin: "ignore", env: { ...process.env, HEYHO_CTX: "" } });
-  expect(r.stderr.toString()).toMatch(/No model server answered[\s\S]*llama-server -m/);
-});
-
 test("/clear empties the screen to the header; /resume and --continue print the earlier conversation again", async () => {
   // In Warp, /clear left the whole conversation on screen, which read as if nothing had been cleared.
   s = await open({ steps: [call("read", { path: "greet.js" }), reply("Hello there.\n")] });
@@ -418,6 +418,31 @@ test("/clear empties the screen to the header; /resume and --continue print the 
   s = await open({ root, args: ["--continue"] });
   const continued = await s.wait(/Continuing the session/);
   expect(continued).toMatch(/heyho v[\s\S]*› say hello[\s\S]*Hello there\.[\s\S]*Continuing the session/);
+});
+
+test("/help lists commands and keys", async () => {
+  s = await open();
+  await s.send("/help");
+  await s.wait(/Shift\+Tab changes mode/);
+  expect(s.scrollback()).toMatch(/\/rewind/); // the list is longer than the window
+});
+
+// ---- leaving ----
+
+test("Ctrl+C clears typed text; twice on an empty box quits", async () => {
+  s = await open();
+  await s.type("half a thought");
+  await s.key("C-c");
+  await s.wait(/describe a task/);
+  await s.key("C-c");
+  await s.wait(/press ctrl\+c again to quit/);
+  await s.key("C-c");
+  await s.wait(/heyho has exited/);
+});
+
+test("no server: a plain message says how to start one", async () => {
+  const r = Bun.spawnSync(["bun", join(import.meta.dirname, "../src/cli.ts"), "--base-url", "http://127.0.0.1:9/v1", "--plain"], { stdin: "ignore", env: { ...process.env, HEYHO_CTX: "" } });
+  expect(r.stderr.toString()).toMatch(/No model server answered[\s\S]*llama-server -m/);
 });
 
 // ---- rough handling ----

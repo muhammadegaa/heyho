@@ -53,7 +53,7 @@ export const COMMANDS: [name: string, args: string, help: string][] = [
   ["exit", "", "quit"],
 ];
 
-const KEYS = `Enter sends · \\ then Enter, Option+Enter or Ctrl+J starts a new line · paste keeps its lines
+const KEYS = `Enter sends · Shift+Enter, Ctrl+J or \\ then Enter starts a new line · paste keeps its lines
 / commands · @ files · ! runs a shell command yourself · Up/Down history
 Shift+Tab changes mode · Esc stops the model · Esc Esc on an empty line opens rewind
 Ctrl+R searches history · Ctrl+G edits the message in $EDITOR · Ctrl+S sets the draft aside and brings it back

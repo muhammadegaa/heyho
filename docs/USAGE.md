@@ -47,7 +47,7 @@ These commands never ask, in any mode: `ls`, `pwd`, `wc`, `cat`, `head`, `tail`,
 | Key | What it does |
 |---|---|
 | Enter | send |
-| `\` then Enter, Option+Enter, Ctrl+J | new line |
+| Shift+Enter, Ctrl+J, `\` then Enter | new line. Shift+Enter needs a terminal that supports the kitty keyboard protocol (Warp, Ghostty, kitty, WezTerm); Ctrl+J and `\` then Enter work everywhere. Option+Enter works where Option is set to act as Meta |
 | `/` | command menu, narrowed as you type |
 | `@` | file menu; the chosen path is added to the message |
 | `!command` | run a shell command yourself; the model sees its output with your next message |

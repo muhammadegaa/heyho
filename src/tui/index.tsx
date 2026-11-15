@@ -28,7 +28,13 @@ export async function runTui(opts: AppOptions, version: string, resume?: string 
   for (const problem of app.problems) store.note(problem, "warn");
   if (app.resumed) store.replay(app.messages);
   if (app.resumed) store.note(`Continuing the session from ${app.resumed.when.toLocaleString()}: "${app.resumed.first}"`, "dim");
-  const ink = render(<Screen app={app} store={store} version={version} pickSession={resume !== undefined && !named} />, { exitOnCtrlC: false, patchConsole: false });
+  const ink = render(<Screen app={app} store={store} version={version} pickSession={resume !== undefined && !named} />, {
+    exitOnCtrlC: false,
+    patchConsole: false,
+    // Asks the terminal to report keys unambiguously where it can (Warp, Ghostty, kitty, WezTerm),
+    // so Shift+Enter arrives as itself and starts a new line. Other terminals don't answer and nothing changes.
+    kittyKeyboard: { mode: "auto" },
+  });
   await ink.waitUntilExit();
   app.shutdown();
 }

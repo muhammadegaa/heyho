@@ -77,6 +77,8 @@ The tables from section 1 on describe the first run, on 2026-11-12, before any o
 
 - Session picker: each entry shows how long ago it was, and Tab shows what was asked in the highlighted session. `e2e/screen.test.ts` "the session list shows how long ago each session was, and Tab previews what was asked in it"; `test/ui.test.ts` "ages are given in the largest unit that fits".
 
+- `/clear` clears the screen down to the header, and a reopened session prints its conversation again. Found in Warp. `e2e/screen.test.ts` "/clear empties the screen to the header; /resume and --continue print the earlier conversation again".
+- Shift+Enter starts a new line in terminals that support the kitty keyboard protocol, which heyho now turns on when the terminal answers. Found in Warp, where Option+Enter sends a plain Enter. `e2e/screen.test.ts` "a message can span lines…" and "with the kitty keyboard protocol on, Esc, Ctrl+U, Ctrl+J and Ctrl+C still work".
 - Themes: `"theme": "light"` for a light background (highlight in blue, warnings in dark orange), beside the default and `"none"`. `e2e/screen.test.ts` "\"theme\": \"light\" highlights the chosen row in blue, where the default uses cyan"; `test/ui.test.ts` "the light theme swaps yellow and cyan for colours that show on a light background".
 
 - Vim keys: counts (`3w`, `2dd`, `d2w`), the `e` motion, copy and paste (`y`, `p`, `P`) and `u`. `test/tui.test.ts` "vim normal mode: counts, the e motion, copy and paste, and undo"; `e2e/screen.test.ts` "vim keys: Esc enters normal mode, motions and deletes work, i returns to typing".
